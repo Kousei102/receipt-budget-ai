@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { CATEGORIES, type Category, type StoredReceipt } from "@/lib/schema";
+import {
+  CATEGORIES,
+  type Category,
+  type ReceiptItem,
+  type StoredReceipt,
+} from "@/lib/schema";
 import { CATEGORY_COLORS, yen, LOW_CONFIDENCE_THRESHOLD } from "@/lib/format";
 
 type Props = {
@@ -14,6 +19,35 @@ type Props = {
 export default function ReceiptCard({ receipt, onUpdate, onDelete }: Props) {
   const [editing, setEditing] = useState(false);
   const lowConfidence = receipt.confidence < LOW_CONFIDENCE_THRESHOLD;
+
+  /** 品目の値段合計。合計の自動再計算に使う。 */
+  const sumPrices = (items: ReceiptItem[]) =>
+    items.reduce((s, it) => s + (Number(it.price) || 0), 0);
+
+  /**
+   * 品目1件だけを書き換え、items 配列を丸ごと onUpdate に渡す。
+   * 値段を変えたときだけ total も品目合計に合わせる（名前だけの編集では total を触らない）。
+   */
+  const updateItem = (index: number, patch: Partial<ReceiptItem>) => {
+    const items = receipt.items.map((it, i) =>
+      i === index ? { ...it, ...patch } : it,
+    );
+    onUpdate(
+      receipt.id,
+      "price" in patch ? { items, total: sumPrices(items) } : { items },
+    );
+  };
+
+  /** 空の品目を末尾に追加（値段は0なので合計は変わらない）。 */
+  const addItem = () => {
+    onUpdate(receipt.id, { items: [...receipt.items, { name: "", price: 0 }] });
+  };
+
+  /** 品目を1件削除し、total を残りの品目合計に合わせる。 */
+  const deleteItem = (index: number) => {
+    const items = receipt.items.filter((_, i) => i !== index);
+    onUpdate(receipt.id, { items, total: sumPrices(items) });
+  };
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
@@ -73,15 +107,54 @@ export default function ReceiptCard({ receipt, onUpdate, onDelete }: Props) {
         </p>
       )}
 
-      {receipt.items.length > 0 && (
-        <ul className="mt-3 space-y-1 text-sm text-gray-600 dark:text-gray-400">
-          {receipt.items.map((item, i) => (
-            <li key={i} className="flex justify-between gap-2">
-              <span className="truncate">{item.name}</span>
-              <span className="shrink-0 tabular-nums">{yen(item.price)}</span>
-            </li>
-          ))}
-        </ul>
+      {(editing || receipt.items.length > 0) && (
+        <div className="mt-3">
+          <ul className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
+            {receipt.items.map((item, i) => (
+              <li key={i} className="flex items-center justify-between gap-2">
+                {editing ? (
+                  <>
+                    <input
+                      className="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
+                      value={item.name}
+                      onChange={(e) => updateItem(i, { name: e.target.value })}
+                    />
+                    <input
+                      type="number"
+                      className="w-24 shrink-0 rounded border border-gray-300 px-2 py-1 text-right tabular-nums dark:border-gray-700 dark:bg-gray-800"
+                      value={item.price}
+                      onChange={(e) =>
+                        updateItem(i, { price: Number(e.target.value) })
+                      }
+                    />
+                    <button
+                      className="shrink-0 px-1 text-red-600 hover:text-red-800 dark:text-red-400"
+                      aria-label="この品目を削除"
+                      onClick={() => deleteItem(i)}
+                    >
+                      ✕
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="truncate">{item.name}</span>
+                    <span className="shrink-0 tabular-nums">
+                      {yen(item.price)}
+                    </span>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+          {editing && (
+            <button
+              className="mt-2 text-sm text-blue-600 hover:underline dark:text-blue-400"
+              onClick={addItem}
+            >
+              ＋ 品目を追加
+            </button>
+          )}
+        </div>
       )}
 
       <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3 dark:border-gray-800">
