@@ -1,4 +1,4 @@
-import type { StoredReceipt } from "./schema";
+import type { Category, StoredReceipt } from "./schema";
 
 /**
  * v1 のデータ保存はブラウザの localStorage を使う（DB・ログイン不要で完結）。
@@ -6,11 +6,32 @@ import type { StoredReceipt } from "./schema";
  */
 const KEY = "receipt-kakeibo:receipts";
 
+/** 旧形式（品目にカテゴリが無く、レシート全体に category を持っていた頃）の型。 */
+type LegacyReceipt = Omit<StoredReceipt, "items"> & {
+  category?: Category; // 旧: レシート全体のカテゴリ
+  items: { name: string; price: number; category?: Category }[];
+};
+
+/**
+ * 旧形式の保存データを新形式に寄せる。
+ * カテゴリの無い品目には、旧レシートカテゴリ→無ければ「その他」を補う。
+ */
+function migrate(list: LegacyReceipt[]): StoredReceipt[] {
+  return list.map((r) => ({
+    ...r,
+    items: (r.items ?? []).map((it) => ({
+      name: it.name,
+      price: it.price,
+      category: it.category ?? r.category ?? "その他",
+    })),
+  }));
+}
+
 export function loadReceipts(): StoredReceipt[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as StoredReceipt[]) : [];
+    return raw ? migrate(JSON.parse(raw) as LegacyReceipt[]) : [];
   } catch {
     return [];
   }

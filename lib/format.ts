@@ -1,4 +1,4 @@
-import type { Category } from "./schema";
+import { CATEGORIES, type Category, type ReceiptItem } from "./schema";
 
 /** カテゴリごとの色。グラフとカードのバッジで共通利用する。 */
 export const CATEGORY_COLORS: Record<Category, string> = {
@@ -17,3 +17,25 @@ export function yen(value: number): string {
 
 /** confidence がこの値未満なら UI で「要確認」を出す。 */
 export const LOW_CONFIDENCE_THRESHOLD = 0.5;
+
+/**
+ * 品目群から、支出額が最も大きいカテゴリを求める。
+ * レシート見出しのバッジ表示に使う派生値（品目カテゴリが単一の情報源）。
+ * 品目が無ければ「その他」。
+ */
+export function dominantCategory(items: ReceiptItem[]): Category {
+  const sums = new Map<Category, number>();
+  for (const it of items) {
+    sums.set(it.category, (sums.get(it.category) ?? 0) + it.price);
+  }
+  let best: Category = "その他";
+  let bestSum = 0;
+  for (const c of CATEGORIES) {
+    const s = sums.get(c) ?? 0;
+    if (s > bestSum) {
+      bestSum = s;
+      best = c;
+    }
+  }
+  return best;
+}

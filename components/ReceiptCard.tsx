@@ -7,7 +7,12 @@ import {
   type ReceiptItem,
   type StoredReceipt,
 } from "@/lib/schema";
-import { CATEGORY_COLORS, yen, LOW_CONFIDENCE_THRESHOLD } from "@/lib/format";
+import {
+  CATEGORY_COLORS,
+  yen,
+  LOW_CONFIDENCE_THRESHOLD,
+  dominantCategory,
+} from "@/lib/format";
 
 type Props = {
   receipt: StoredReceipt;
@@ -19,6 +24,8 @@ type Props = {
 export default function ReceiptCard({ receipt, onUpdate, onDelete }: Props) {
   const [editing, setEditing] = useState(false);
   const lowConfidence = receipt.confidence < LOW_CONFIDENCE_THRESHOLD;
+  // レシート見出しのバッジ：品目カテゴリのうち最も支出が多いものを表示（派生値）。
+  const headlineCategory = dominantCategory(receipt.items);
 
   /** 品目の値段合計。合計の自動再計算に使う。 */
   const sumPrices = (items: ReceiptItem[]) =>
@@ -38,9 +45,11 @@ export default function ReceiptCard({ receipt, onUpdate, onDelete }: Props) {
     );
   };
 
-  /** 空の品目を末尾に追加（値段は0なので合計は変わらない）。 */
+  /** 空の品目を末尾に追加（値段は0なので合計は変わらない。カテゴリは「その他」で開始）。 */
   const addItem = () => {
-    onUpdate(receipt.id, { items: [...receipt.items, { name: "", price: 0 }] });
+    onUpdate(receipt.id, {
+      items: [...receipt.items, { name: "", price: 0, category: "その他" }],
+    });
   };
 
   /** 品目を1件削除し、total を残りの品目合計に合わせる。 */
@@ -79,25 +88,10 @@ export default function ReceiptCard({ receipt, onUpdate, onDelete }: Props) {
         </div>
         <span
           className="shrink-0 rounded-full px-3 py-1 text-sm font-medium text-white"
-          style={{ backgroundColor: CATEGORY_COLORS[receipt.category] }}
+          style={{ backgroundColor: CATEGORY_COLORS[headlineCategory] }}
+          title="このレシートで最も支出が多いカテゴリ（品目から自動判定）"
         >
-          {editing ? (
-            <select
-              className="bg-transparent outline-none"
-              value={receipt.category}
-              onChange={(e) =>
-                onUpdate(receipt.id, { category: e.target.value as Category })
-              }
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c} className="text-black">
-                  {c}
-                </option>
-              ))}
-            </select>
-          ) : (
-            receipt.category
-          )}
+          {headlineCategory}
         </span>
       </div>
 
@@ -111,7 +105,14 @@ export default function ReceiptCard({ receipt, onUpdate, onDelete }: Props) {
         <div className="mt-3">
           <ul className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
             {receipt.items.map((item, i) => (
-              <li key={i} className="flex items-center justify-between gap-2">
+              <li
+                key={i}
+                className={
+                  editing
+                    ? "flex flex-wrap items-center gap-2"
+                    : "flex items-center justify-between gap-2"
+                }
+              >
                 {editing ? (
                   <>
                     <input
@@ -119,6 +120,19 @@ export default function ReceiptCard({ receipt, onUpdate, onDelete }: Props) {
                       value={item.name}
                       onChange={(e) => updateItem(i, { name: e.target.value })}
                     />
+                    <select
+                      className="shrink-0 rounded border border-gray-300 px-1 py-1 dark:border-gray-700 dark:bg-gray-800"
+                      value={item.category}
+                      onChange={(e) =>
+                        updateItem(i, { category: e.target.value as Category })
+                      }
+                    >
+                      {CATEGORIES.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
                     <input
                       type="number"
                       className="w-24 shrink-0 rounded border border-gray-300 px-2 py-1 text-right tabular-nums dark:border-gray-700 dark:bg-gray-800"
@@ -137,7 +151,13 @@ export default function ReceiptCard({ receipt, onUpdate, onDelete }: Props) {
                   </>
                 ) : (
                   <>
-                    <span className="truncate">{item.name}</span>
+                    <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                    <span
+                      className="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium text-white"
+                      style={{ backgroundColor: CATEGORY_COLORS[item.category] }}
+                    >
+                      {item.category}
+                    </span>
                     <span className="shrink-0 tabular-nums">
                       {yen(item.price)}
                     </span>

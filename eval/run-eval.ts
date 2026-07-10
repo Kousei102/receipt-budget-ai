@@ -85,7 +85,10 @@ async function main() {
     const hit = {
       store: norm(got.store) === norm(expected.store),
       date: got.date === expected.date,
-      category: got.category === expected.category,
+      // 品目カテゴリの一致：品数が一致し、各品目のカテゴリが順に一致したら○。
+      category:
+        got.items.length === expected.items.length &&
+        got.items.every((it, i) => it.category === expected.items[i].category),
       total: Math.abs(got.total - expected.total) < 1,
       items: got.items.length === expected.items.length,
     };

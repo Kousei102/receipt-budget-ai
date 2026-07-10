@@ -18,6 +18,7 @@ export type Category = (typeof CATEGORIES)[number];
 export const receiptItemSchema = z.object({
   name: z.string(),
   price: z.number(),
+  category: z.enum(CATEGORIES),
 });
 
 /**
@@ -29,7 +30,6 @@ export const receiptSchema = z.object({
   date: z.string(), // YYYY-MM-DD
   items: z.array(receiptItemSchema),
   total: z.number(),
-  category: z.enum(CATEGORIES),
   confidence: z.number().min(0).max(1),
 });
 
@@ -67,18 +67,19 @@ export const receiptJsonSchema = {
         properties: {
           name: { type: "string", description: "品目名" },
           price: { type: "number", description: "税込価格（円、整数または小数）" },
+          category: {
+            type: "string",
+            enum: [...CATEGORIES],
+            description:
+              "この品目自体の支出カテゴリを1つ選ぶ。例: 食品→食費、飲食店での飲食→外食、洗剤・トイレットペーパー等→日用品、電車・バス→交通、書籍・ゲーム等→娯楽、どれにも当てはまらない→その他。",
+          },
         },
-        required: ["name", "price"],
+        required: ["name", "price", "category"],
       },
     },
     total: {
       type: "number",
       description: "合計金額（円）。値引き後の実支払額。",
-    },
-    category: {
-      type: "string",
-      enum: [...CATEGORIES],
-      description: "このレシート全体の主な支出カテゴリを1つ選ぶ。",
     },
     confidence: {
       type: "number",
@@ -86,5 +87,5 @@ export const receiptJsonSchema = {
         "抽出全体への自信度 0〜1。ぼやけ・見切れ・レシート以外の画像など不確かなほど低くする。",
     },
   },
-  required: ["store", "date", "items", "total", "category", "confidence"],
+  required: ["store", "date", "items", "total", "confidence"],
 } as const;

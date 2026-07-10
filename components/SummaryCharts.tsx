@@ -10,11 +10,17 @@ type Props = {
 
 /** レシート一覧をカテゴリ別に集計し、円グラフ＋合計で可視化する。 */
 export default function SummaryCharts({ receipts }: Props) {
+  // レシート単位ではなく、品目ごとのカテゴリで集計する。
   const byCategory = CATEGORIES.map((category) => ({
     category,
-    total: receipts
-      .filter((r) => r.category === category)
-      .reduce((sum, r) => sum + r.total, 0),
+    total: receipts.reduce(
+      (sum, r) =>
+        sum +
+        r.items
+          .filter((it) => it.category === category)
+          .reduce((s, it) => s + it.price, 0),
+      0,
+    ),
   })).filter((d) => d.total > 0);
 
   const grandTotal = byCategory.reduce((sum, d) => sum + d.total, 0);
