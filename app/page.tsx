@@ -27,6 +27,8 @@ export default function Home() {
   const [receipts, setReceipts] = useState<StoredReceipt[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 複数枚アップロード時の進捗（N枚中M枚目）。1枚だけのときは null のまま。
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   // 月次フィルタ。"all" は全期間。値は購入日から作った "YYYY-MM"。
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
 
@@ -72,31 +74,54 @@ export default function Home() {
     }
   }
 
-  async function handleFile(file: File) {
+  /** 1枚を抽出して StoredReceipt を返す（失敗は投げる）。 */
+  async function extractOne(file: File): Promise<StoredReceipt> {
+    const { base64, mediaType } = await fileToBase64(file);
+    const res = await fetch("/api/extract", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageBase64: base64, mediaType }),
+    });
+    const data: { ok: boolean; receipt?: Receipt; error?: string } = await res.json();
+    if (!data.ok || !data.receipt) {
+      throw new Error(data.error ?? "レシートを読み取れませんでした。");
+    }
+    return { ...data.receipt, id: newId(), createdAt: new Date().toISOString() };
+  }
+
+  /**
+   * 複数枚を順次処理する（API へ同時多発させない）。
+   * 1枚終わるごとに保存して画面に反映し、失敗したファイルは名前付きでまとめて知らせる。
+   */
+  async function handleFiles(files: File[]) {
+    if (files.length === 0) return;
     setError(null);
     setLoading(true);
-    try {
-      const { base64, mediaType } = await fileToBase64(file);
-      const res = await fetch("/api/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64: base64, mediaType }),
-      });
-      const data: { ok: boolean; receipt?: Receipt; error?: string } = await res.json();
-      if (!data.ok || !data.receipt) {
-        throw new Error(data.error ?? "レシートを読み取れませんでした。");
+    setProgress(files.length > 1 ? { done: 0, total: files.length } : null);
+
+    const base = receipts; // 処理中は他の変更が入らないため、開始時点の一覧を土台にする
+    const added: StoredReceipt[] = [];
+    const errors: string[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      try {
+        const stored = await extractOne(files[i]);
+        added.unshift(stored); // 新しく読んだものを先頭に
+        persist([...added, ...base]); // 逐次反映（終わったものから表示）
+      } catch (e) {
+        errors.push(`${files[i].name}: ${e instanceof Error ? e.message : "読み取りに失敗"}`);
       }
-      const stored: StoredReceipt = {
-        ...data.receipt,
-        id: newId(),
-        createdAt: new Date().toISOString(),
-      };
-      persist([stored, ...receipts]);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "エラーが発生しました。");
-    } finally {
-      setLoading(false);
+      if (files.length > 1) setProgress({ done: i + 1, total: files.length });
     }
+
+    if (errors.length > 0) {
+      setError(
+        `${files.length}枚中 ${errors.length}枚の読み取りに失敗しました。\n` +
+          errors.join("\n"),
+      );
+    }
+    setLoading(false);
+    setProgress(null);
   }
 
   function handleUpdate(id: string, patch: Partial<StoredReceipt>) {
@@ -130,10 +155,16 @@ export default function Home() {
         </p>
       </header>
 
-      <UploadDropzone onFile={handleFile} disabled={loading} />
+      <UploadDropzone onFiles={handleFiles} disabled={loading} />
+
+      {progress && (
+        <p className="mt-4 text-center text-sm text-gray-500">
+          {progress.total}枚中 {progress.done}枚を処理しました…
+        </p>
+      )}
 
       {error && (
-        <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
+        <p className="mt-4 whitespace-pre-line rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
           {error}
         </p>
       )}

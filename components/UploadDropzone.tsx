@@ -3,24 +3,24 @@
 import { useCallback, useRef, useState } from "react";
 
 type Props = {
-  onFile: (file: File) => void;
+  onFiles: (files: File[]) => void;
   disabled?: boolean;
 };
 
 /**
- * レシート画像のドラッグ&ドロップ + クリック選択。
- * 受け取ったファイルはそのまま onFile で親に渡す（変換や送信は親が担当）。
+ * レシート画像のドラッグ&ドロップ + クリック選択（複数枚対応）。
+ * 受け取ったファイルはそのまま onFiles で親に渡す（変換や送信は親が担当）。
  */
-export default function UploadDropzone({ onFile, disabled }: Props) {
+export default function UploadDropzone({ onFiles, disabled }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
   const handleFiles = useCallback(
     (files: FileList | null) => {
-      const file = files?.[0];
-      if (file) onFile(file);
+      const list = files ? Array.from(files) : [];
+      if (list.length > 0) onFiles(list);
     },
-    [onFile],
+    [onFiles],
   );
 
   return (
@@ -58,12 +58,18 @@ export default function UploadDropzone({ onFile, disabled }: Props) {
         ref={inputRef}
         type="file"
         accept="image/jpeg,image/png,image/gif,image/webp"
+        multiple
         className="hidden"
-        onChange={(e) => handleFiles(e.target.files)}
+        onChange={(e) => {
+          handleFiles(e.target.files);
+          e.target.value = ""; // 同じファイルを選び直せるようにリセット
+        }}
       />
       <div className="text-4xl">🧾</div>
       <p className="font-medium">
-        {disabled ? "読み取り中…" : "レシート画像をドロップ、またはクリックして選択"}
+        {disabled
+          ? "読み取り中…"
+          : "レシート画像をドロップ、またはクリックして選択（複数可）"}
       </p>
       <p className="text-sm text-gray-500">JPEG / PNG / GIF / WebP に対応</p>
     </div>
