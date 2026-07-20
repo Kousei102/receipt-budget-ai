@@ -15,6 +15,12 @@ export function yen(value: number): string {
   return "¥" + Math.round(value).toLocaleString("ja-JP");
 }
 
+/** "2026-03" を「2026年3月」に整形する（月次フィルタの表示用）。 */
+export function formatMonthLabel(ym: string): string {
+  const [y, m] = ym.split("-");
+  return `${y}年${Number(m)}月`;
+}
+
 /** confidence がこの値未満なら UI で「要確認」を出す。 */
 export const LOW_CONFIDENCE_THRESHOLD = 0.5;
 

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import UploadDropzone from "@/components/UploadDropzone";
 import ReceiptCard from "@/components/ReceiptCard";
 import SummaryCharts from "@/components/SummaryCharts";
 import type { Receipt, StoredReceipt } from "@/lib/schema";
 import { loadReceipts, newId, saveReceipts } from "@/lib/storage";
+import { formatMonthLabel } from "@/lib/format";
 
 /** File を { base64, mediaType } に変換する（Claude に渡す形）。 */
 function fileToBase64(file: File): Promise<{ base64: string; mediaType: string }> {
@@ -25,6 +26,33 @@ export default function Home() {
   const [receipts, setReceipts] = useState<StoredReceipt[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 月次フィルタ。"all" は全期間。値は購入日から作った "YYYY-MM"。
+  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+
+  // レシートの購入日から、選択できる月の一覧（新しい順）を作る。
+  const months = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of receipts) {
+      const ym = r.date?.slice(0, 7);
+      if (ym && /^\d{4}-\d{2}$/.test(ym)) set.add(ym);
+    }
+    return Array.from(set).sort().reverse();
+  }, [receipts]);
+
+  // 選択中の月が（削除などで）無くなったら全期間にフォールバックする。
+  const effectiveMonth =
+    selectedMonth !== "all" && !months.includes(selectedMonth)
+      ? "all"
+      : selectedMonth;
+
+  // グラフと一覧の両方をこの絞り込み結果で表示する。
+  const visibleReceipts = useMemo(
+    () =>
+      effectiveMonth === "all"
+        ? receipts
+        : receipts.filter((r) => r.date?.startsWith(effectiveMonth)),
+    [receipts, effectiveMonth],
+  );
 
   // 初回マウント時に localStorage から復元する。
   // localStorage はクライアント専用のため、SSR 後にこの1回だけ読み込む意図的なパターン。
@@ -95,9 +123,30 @@ export default function Home() {
         </p>
       )}
 
-      {receipts.length > 0 && (
-        <section className="mt-8">
-          <SummaryCharts receipts={receipts} />
+      {months.length > 0 && (
+        <div className="mt-8 flex items-center justify-end gap-2">
+          <label htmlFor="month-filter" className="text-sm text-gray-500">
+            表示期間
+          </label>
+          <select
+            id="month-filter"
+            value={effectiveMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+          >
+            <option value="all">すべての期間</option>
+            {months.map((m) => (
+              <option key={m} value={m}>
+                {formatMonthLabel(m)}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {visibleReceipts.length > 0 && (
+        <section className="mt-4">
+          <SummaryCharts receipts={visibleReceipts} />
         </section>
       )}
 
@@ -108,7 +157,7 @@ export default function Home() {
           </p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
-            {receipts.map((r) => (
+            {visibleReceipts.map((r) => (
               <ReceiptCard
                 key={r.id}
                 receipt={r}
