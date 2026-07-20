@@ -9,7 +9,7 @@ import { loadReceipts, newId, saveReceipts } from "@/lib/storage";
 import { formatMonthLabel } from "@/lib/format";
 import { receiptsToCsv } from "@/lib/csv";
 
-/** File を { base64, mediaType } に変換する（Claude に渡す形）。 */
+/** File を { base64, mediaType } に変換する（Claude に渡す形）。リサイズできないときのフォールバック。 */
 function fileToBase64(file: File): Promise<{ base64: string; mediaType: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -21,6 +21,39 @@ function fileToBase64(file: File): Promise<{ base64: string; mediaType: string }
     reader.onerror = () => reject(new Error("画像の読み込みに失敗しました。"));
     reader.readAsDataURL(file);
   });
+}
+
+// Claude Vision が最適にトークン計算する長辺の目安。これ以上は縮小しても精度に影響しにくい。
+const MAX_IMAGE_EDGE = 1568;
+
+/**
+ * 送信前に画像を長辺 MAX_IMAGE_EDGE まで縮小し、JPEG(0.85) で再エンコードする。
+ * 目的: 送信量とレイテンシ・API コストの削減、サーバー側サイズ上限(5MB)超過の予防。
+ * canvas 変換に失敗した場合は元ファイルをそのまま送る（フォールバック）。
+ */
+async function fileToPayload(
+  file: File,
+): Promise<{ base64: string; mediaType: string }> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("canvas 2d コンテキストを取得できませんでした。");
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+
+    const base64 = canvas.toDataURL("image/jpeg", 0.85).split(",")[1] ?? "";
+    if (!base64) throw new Error("画像の再エンコードに失敗しました。");
+    return { base64, mediaType: "image/jpeg" };
+  } catch {
+    return fileToBase64(file);
+  }
 }
 
 export default function Home() {
@@ -76,7 +109,7 @@ export default function Home() {
 
   /** 1枚を抽出して StoredReceipt を返す（失敗は投げる）。 */
   async function extractOne(file: File): Promise<StoredReceipt> {
-    const { base64, mediaType } = await fileToBase64(file);
+    const { base64, mediaType } = await fileToPayload(file);
     const res = await fetch("/api/extract", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
