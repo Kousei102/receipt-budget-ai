@@ -17,19 +17,22 @@ export type Category = (typeof CATEGORIES)[number];
 /** レシート1品目 */
 export const receiptItemSchema = z.object({
   name: z.string(),
-  price: z.number(),
+  // NaN / Infinity は弾く。値引き行を品目として返す可能性を残すため負値は許容する。
+  price: z.number().finite(),
   category: z.enum(CATEGORIES),
 });
 
 /**
  * Claude から受け取る「1枚のレシート」の構造。
  * ここが構造化出力の“契約”。API レスポンスは必ずこの形にパースする。
+ * 型だけでなく値の妥当性（日付形式・金額が有限で非負）もここで担保し、壊れた出力を弾く。
  */
 export const receiptSchema = z.object({
   store: z.string(),
-  date: z.string(), // YYYY-MM-DD
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日付は YYYY-MM-DD 形式である必要があります"),
   items: z.array(receiptItemSchema),
-  total: z.number(),
+  // 実支払額。NaN / Infinity / 負値は異常なので弾く。
+  total: z.number().finite().nonnegative(),
   confidence: z.number().min(0).max(1),
 });
 
@@ -79,10 +82,13 @@ export const receiptJsonSchema = {
     },
     total: {
       type: "number",
-      description: "合計金額（円）。値引き後の実支払額。",
+      minimum: 0,
+      description: "合計金額（円）。値引き後の実支払額。0以上。",
     },
     confidence: {
       type: "number",
+      minimum: 0,
+      maximum: 1,
       description:
         "抽出全体への自信度 0〜1。ぼやけ・見切れ・レシート以外の画像など不確かなほど低くする。",
     },

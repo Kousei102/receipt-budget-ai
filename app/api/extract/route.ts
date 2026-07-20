@@ -9,6 +9,11 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
+// 画像1枚あたりの上限（デコード後 5MB）。過大なリクエストによる遅延・課金事故を防ぐ。
+// base64 は元データの約 4/3 倍になるため、しきい値は base64 文字数に換算して判定する。
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_BASE64_LENGTH = Math.ceil(MAX_IMAGE_BYTES / 3) * 4;
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -28,6 +33,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { ok: false, error: "対応していない画像形式です（JPEG / PNG / GIF / WebP）。" },
         { status: 400 },
+      );
+    }
+    if (imageBase64.length > MAX_BASE64_LENGTH) {
+      return NextResponse.json(
+        { ok: false, error: "画像サイズが大きすぎます（5MBまで）。" },
+        { status: 413 },
       );
     }
 

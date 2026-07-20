@@ -34,8 +34,13 @@ export default function Home() {
   }, []);
 
   function persist(next: StoredReceipt[]) {
+    // 画面表示は先に更新し、保存に失敗したときだけエラーを知らせる（操作は失われない）。
     setReceipts(next);
-    saveReceipts(next);
+    try {
+      saveReceipts(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "データの保存に失敗しました。");
+    }
   }
 
   async function handleFile(file: File) {

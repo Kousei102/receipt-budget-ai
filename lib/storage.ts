@@ -37,9 +37,21 @@ export function loadReceipts(): StoredReceipt[] {
   }
 }
 
+/**
+ * 保存に失敗し得る理由:
+ *  - 容量超過（QuotaExceededError）: 画像は保存しないとはいえ件数が増えれば上限に達し得る
+ *  - プライベートブラウジング等で localStorage への書き込みがブロックされる
+ * 失敗は握り潰さず投げ、呼び出し側でユーザーに知らせる（メモリ上のデータは残る）。
+ */
 export function saveReceipts(list: StoredReceipt[]): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(KEY, JSON.stringify(list));
+  try {
+    window.localStorage.setItem(KEY, JSON.stringify(list));
+  } catch {
+    throw new Error(
+      "データの保存に失敗しました。ブラウザの空き容量やプライバシー設定をご確認ください。",
+    );
+  }
 }
 
 export function newId(): string {
