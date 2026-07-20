@@ -7,6 +7,7 @@ import SummaryCharts from "@/components/SummaryCharts";
 import type { Receipt, StoredReceipt } from "@/lib/schema";
 import { loadReceipts, newId, saveReceipts } from "@/lib/storage";
 import { formatMonthLabel } from "@/lib/format";
+import { receiptsToCsv } from "@/lib/csv";
 
 /** File を { base64, mediaType } に変換する（Claude に渡す形）。 */
 function fileToBase64(file: File): Promise<{ base64: string; mediaType: string }> {
@@ -102,6 +103,20 @@ export default function Home() {
     persist(receipts.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   }
 
+  /** 表示中（月フィルタ適用後）のレシートを CSV でダウンロードする。 */
+  function handleExport() {
+    // Excel(日本語)で文字化けしないよう先頭に BOM を付ける。
+    const blob = new Blob(["\uFEFF" + receiptsToCsv(visibleReceipts)], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `receipts_${effectiveMonth}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function handleDelete(id: string) {
     persist(receipts.filter((r) => r.id !== id));
   }
@@ -123,24 +138,34 @@ export default function Home() {
         </p>
       )}
 
-      {months.length > 0 && (
-        <div className="mt-8 flex items-center justify-end gap-2">
-          <label htmlFor="month-filter" className="text-sm text-gray-500">
-            表示期間
-          </label>
-          <select
-            id="month-filter"
-            value={effectiveMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+      {visibleReceipts.length > 0 && (
+        <div className="mt-8 flex items-center justify-between gap-2">
+          <button
+            onClick={handleExport}
+            className="rounded border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
           >
-            <option value="all">すべての期間</option>
-            {months.map((m) => (
-              <option key={m} value={m}>
-                {formatMonthLabel(m)}
-              </option>
-            ))}
-          </select>
+            ⬇ CSVエクスポート
+          </button>
+          {months.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label htmlFor="month-filter" className="text-sm text-gray-500">
+                表示期間
+              </label>
+              <select
+                id="month-filter"
+                value={effectiveMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+              >
+                <option value="all">すべての期間</option>
+                {months.map((m) => (
+                  <option key={m} value={m}>
+                    {formatMonthLabel(m)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       )}
 
