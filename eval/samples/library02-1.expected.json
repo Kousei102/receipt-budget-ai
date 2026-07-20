@@ -1,0 +1,13 @@
+{
+  "store": "I SHOP みなとみらい店",
+  "date": "2024-03-22",
+  "items": [
+    { "name": "大根", "price": 105, "category": "食費" },
+    { "name": "たまねぎ", "price": 105, "category": "食費" },
+    { "name": "チョコパンBB", "price": 200, "category": "食費" },
+    { "name": "ISPポテトS", "price": 150, "category": "食費" },
+    { "name": "はまソーダ500ML", "price": 196, "category": "食費" },
+    { "name": "姫かま", "price": 150, "category": "食費" }
+  ],
+  "total": 876
+}
