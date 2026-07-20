@@ -11,6 +11,8 @@ import {
   CATEGORY_COLORS,
   yen,
   LOW_CONFIDENCE_THRESHOLD,
+  TOTAL_MISMATCH_THRESHOLD,
+  sumItemPrices,
   dominantCategory,
 } from "@/lib/format";
 
@@ -27,9 +29,9 @@ export default function ReceiptCard({ receipt, onUpdate, onDelete }: Props) {
   // レシート見出しのバッジ：品目カテゴリのうち最も支出が多いものを表示（派生値）。
   const headlineCategory = dominantCategory(receipt.items);
 
-  /** 品目の値段合計。合計の自動再計算に使う。 */
-  const sumPrices = (items: ReceiptItem[]) =>
-    items.reduce((s, it) => s + (Number(it.price) || 0), 0);
+  // 合計と品目内訳のズレ（正: 合計の方が大きい＝読み取り漏れの可能性）。
+  const totalGap = receipt.total - sumItemPrices(receipt.items);
+  const totalMismatch = Math.abs(totalGap) >= TOTAL_MISMATCH_THRESHOLD;
 
   /**
    * 品目1件だけを書き換え、items 配列を丸ごと onUpdate に渡す。
@@ -41,7 +43,7 @@ export default function ReceiptCard({ receipt, onUpdate, onDelete }: Props) {
     );
     onUpdate(
       receipt.id,
-      "price" in patch ? { items, total: sumPrices(items) } : { items },
+      "price" in patch ? { items, total: sumItemPrices(items) } : { items },
     );
   };
 
@@ -55,7 +57,7 @@ export default function ReceiptCard({ receipt, onUpdate, onDelete }: Props) {
   /** 品目を1件削除し、total を残りの品目合計に合わせる。 */
   const deleteItem = (index: number) => {
     const items = receipt.items.filter((_, i) => i !== index);
-    onUpdate(receipt.id, { items, total: sumPrices(items) });
+    onUpdate(receipt.id, { items, total: sumItemPrices(items) });
   };
 
   return (
@@ -95,10 +97,22 @@ export default function ReceiptCard({ receipt, onUpdate, onDelete }: Props) {
         </span>
       </div>
 
-      {lowConfidence && (
-        <p className="mt-2 inline-block rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-          ⚠ 要確認（自信度 {Math.round(receipt.confidence * 100)}%）
-        </p>
+      {(lowConfidence || totalMismatch) && (
+      <div className="mt-2 flex flex-wrap gap-2">
+        {lowConfidence && (
+          <span className="inline-block rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+            ⚠ 要確認（自信度 {Math.round(receipt.confidence * 100)}%）
+          </span>
+        )}
+        {totalMismatch && (
+          <span
+            className="inline-block rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+            title="合計と品目価格の内訳が一致しません。読み取り漏れや値引きの取りこぼしがないか確認してください。"
+          >
+            ⚠ 内訳と合計が {yen(Math.abs(totalGap))} ずれています
+          </span>
+        )}
+      </div>
       )}
 
       {(editing || receipt.items.length > 0) && (

@@ -19,6 +19,17 @@ export function yen(value: number): string {
 export const LOW_CONFIDENCE_THRESHOLD = 0.5;
 
 /**
+ * 合計(total)と品目価格の合計がこの額（円）以上ずれていたら「要確認」を出す。
+ * 読み取り漏れ・重複・値引きの取りこぼしなど、OCR ミスの有力なシグナル。
+ */
+export const TOTAL_MISMATCH_THRESHOLD = 1;
+
+/** 品目価格の合計。合計との照合や自動再計算に使う。 */
+export function sumItemPrices(items: ReceiptItem[]): number {
+  return items.reduce((s, it) => s + (Number(it.price) || 0), 0);
+}
+
+/**
  * 品目群から、支出額が最も大きいカテゴリを求める。
  * レシート見出しのバッジ表示に使う派生値（品目カテゴリが単一の情報源）。
  * 品目が無ければ「その他」。
