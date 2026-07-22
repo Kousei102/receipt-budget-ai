@@ -37,4 +37,4 @@ Next.js 16 (App Router) / React 19 / TypeScript / Tailwind CSS v4 / Recharts / Z
 - カテゴリは**実行時にユーザーが追加・削除できる**（実体は localStorage、`lib/storage.ts` の `loadCategories`/`saveCategories`）。`lib/schema.ts` の `DEFAULT_CATEGORIES` は初期シード兼フォールバックにすぎない。抽出時は現在の一覧を `/api/extract` に渡し、`buildReceiptJsonSchema` が Claude の tool `enum` を動的生成する。色は `lib/format.ts` の `categoryColor()` が任意名に自動割り当てするので、色マップの手更新は不要（既定6色だけ `DEFAULT_CATEGORY_COLORS` に固定）。`FALLBACK_CATEGORY`（その他）は削除不可の恒久カテゴリ。
 - 保存するのは抽出後のJSONのみ。**画像は保存しない**。
 - 支出レコード（`StoredReceipt`）は入力経路を `source`（`"receipt" | "manual" | "recurring"`）で区別する。集計・月フィルタ・CSVは `date` / `items[].category` / `items[].price` だけを見るので、この形に合えば入力経路を問わず既存の表示・集計がそのまま動く。手入力・定期支出は `confidence: 1`（要確認バッジを出さない）。
-- 定期支出の自動計上は**冪等**にする：定義側の `lastPostedMonth` カーソルが主ガード（計上済みレコードをユーザーが削除しても復活させない）。レコード保存に成功してからカーソルを保存する順序を崩さない。
+- 定期支出の自動計上は**冪等**にする：定義側の `lastPostedMonth` カーソルが主ガード（計上済みレコードをユーザーが削除しても復活させない）。レコード保存に成功してからカーソルを保存する順序を崩さない。定義の編集は**今後の計上分にのみ反映**し、計上済みレコードは書き換えない。
