@@ -49,12 +49,22 @@ export type ReceiptItem = z.infer<typeof receiptItemSchema>;
 export type Receipt = z.infer<typeof receiptSchema>;
 
 /**
+ * 抽出元画像の種別。モデルが判定して imageKind として返す（1画像につき1種別）。
+ * - "receipt": 紙のレシート
+ * - "payment_app": 決済アプリ（PayPay 等）の取引履歴画面
+ * - "card_statement": クレジットカードの利用明細（Web明細・カードアプリ画面）
+ */
+export const IMAGE_KINDS = ["receipt", "payment_app", "card_statement"] as const;
+export type ImageKind = (typeof IMAGE_KINDS)[number];
+
+/**
  * レコードの入力経路。
  * - "receipt": 画像からのAI抽出（紙レシート・決済アプリのスクショ含む。挙動が同一なので区別しない）
  * - "manual": 手入力
  * - "recurring": 定期支出の自動計上
+ * - "card": クレカ明細スクショからのAI抽出（緩い重複判定の対象を区別するため "receipt" と分ける）
  */
-export type ReceiptSource = "receipt" | "manual" | "recurring";
+export type ReceiptSource = "receipt" | "manual" | "recurring" | "card";
 
 /** localStorage に保存するときは id・作成日時・入力経路を付与する */
 export type StoredReceipt = Receipt & {
@@ -130,14 +140,20 @@ export function buildExtractionJsonSchema(categories: readonly string[]) {
   return {
     type: "object",
     properties: {
+      imageKind: {
+        type: "string",
+        enum: [...IMAGE_KINDS],
+        description:
+          "画像の種別。紙のレシート→receipt、決済アプリの取引履歴画面→payment_app、クレジットカードのWeb明細・カードアプリの利用明細→card_statement。",
+      },
       receipts: {
         type: "array",
         minItems: 1,
         description:
-          "画像から抽出した支出レコードの一覧。紙のレシートなら必ず1件だけ。決済アプリの取引履歴画面なら、見えている取引1件につき1レコードにする。",
+          "画像から抽出した支出レコードの一覧。紙のレシートなら必ず1件だけ。決済アプリの取引履歴画面・クレカの利用明細なら、見えている取引（利用）1件につき1レコードにする。",
         items: buildReceiptJsonSchema(categories),
       },
     },
-    required: ["receipts"],
+    required: ["imageKind", "receipts"],
   } as const;
 }

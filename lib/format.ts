@@ -12,6 +12,7 @@ export const SOURCE_LABELS: Record<ReceiptSource, string> = {
   receipt: "レシート",
   manual: "手入力",
   recurring: "定期",
+  card: "カード明細",
 };
 
 /**

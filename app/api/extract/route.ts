@@ -53,7 +53,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1画像から複数レコードが返り得る（決済アプリの履歴画面）。レスポンスは { ok, receipts }。
+    // 1画像から複数レコードが返り得る（決済アプリの履歴画面・クレカ明細）。
+    // レスポンスは { ok, imageKind, receipts }。imageKind でクライアントが source を切り替える。
     const result = await extractReceipts(
       imageBase64,
       mediaType as SupportedMediaType,

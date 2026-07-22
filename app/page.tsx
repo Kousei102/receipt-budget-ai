@@ -6,7 +6,13 @@ import ReceiptCard from "@/components/ReceiptCard";
 import SummaryCharts from "@/components/SummaryCharts";
 import CategoryManager from "@/components/CategoryManager";
 import RecurringManager from "@/components/RecurringManager";
-import { DEFAULT_CATEGORIES, FALLBACK_CATEGORY, type Receipt, type StoredReceipt } from "@/lib/schema";
+import {
+  DEFAULT_CATEGORIES,
+  FALLBACK_CATEGORY,
+  type Receipt,
+  type ReceiptSource,
+  type StoredReceipt,
+} from "@/lib/schema";
 import {
   loadReceipts,
   loadCategories,
@@ -19,7 +25,7 @@ import {
 import { materializeRecurring, type RecurringExpense } from "@/lib/recurring";
 import { formatMonthLabel, isEmptyReceipt, yen } from "@/lib/format";
 import { receiptsToCsv } from "@/lib/csv";
-import { findDuplicate } from "@/lib/duplicate";
+import { findDuplicate, findLooseCrossSourceDuplicate } from "@/lib/duplicate";
 
 /** File を { base64, mediaType } に変換する（Claude に渡す形）。リサイズできないときのフォールバック。 */
 function fileToBase64(file: File): Promise<{ base64: string; mediaType: string }> {
@@ -201,16 +207,24 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ imageBase64: base64, mediaType, categories }),
     });
-    const data: { ok: boolean; receipts?: Receipt[]; error?: string } = await res.json();
+    const data: {
+      ok: boolean;
+      receipts?: Receipt[];
+      imageKind?: string;
+      error?: string;
+    } = await res.json();
     if (!data.ok || !data.receipts || data.receipts.length === 0) {
       throw new Error(data.error ?? "画像から支出を読み取れませんでした。");
     }
     const createdAt = new Date().toISOString();
+    // クレカ明細由来だけ "card" にする（緩い重複判定の対象を区別するため）。
+    // 決済アプリ（payment_app）は従来どおり "receipt" 扱い。
+    const source: ReceiptSource = data.imageKind === "card_statement" ? "card" : "receipt";
     return data.receipts.map((r) => ({
       ...r,
       id: newId(),
       createdAt,
-      source: "receipt",
+      source,
     }));
   }
 
@@ -266,10 +280,16 @@ export default function Home() {
         // ただし同一画像内のレコード同士は照合しない：決済アプリの履歴は品目が無く
         // 店名・日付・合計の3点キーが衝突しやすいが、モデルが別行として返した以上
         // 別取引と信頼する（同じ店で同日に同額を2回払うのは正当な連続取引）。
+        // 厳密一致を先に評価し、外れたら「カード明細 vs それ以外」限定の緩い一致で
+        // 二重計上（店頭レシート＋カード明細）の候補を拾う。
         const accepted: StoredReceipt[] = [];
         for (let k = 0; k < extracted.length; k++) {
           const stored = extracted[k];
-          const dupe = findDuplicate(stored, base) ?? findDuplicate(stored, added);
+          const dupe =
+            findDuplicate(stored, base) ??
+            findDuplicate(stored, added) ??
+            findLooseCrossSourceDuplicate(stored, base) ??
+            findLooseCrossSourceDuplicate(stored, added);
           if (dupe) {
             const label =
               extracted.length > 1
