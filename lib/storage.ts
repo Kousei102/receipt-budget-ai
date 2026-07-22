@@ -12,6 +12,7 @@ const REC_KEY = "receipt-kakeibo:recurring";
 const INCOME_KEY = "receipt-kakeibo:incomes";
 const REC_INCOME_KEY = "receipt-kakeibo:recurring-incomes";
 const GOAL_KEY = "receipt-kakeibo:savings-goal";
+const API_KEY_KEY = "receipt-kakeibo:api-key";
 
 /** 旧形式（品目カテゴリや source が無かった頃）の型。 */
 type LegacyReceipt = Omit<StoredReceipt, "items" | "source"> & {
@@ -196,6 +197,38 @@ export function saveSavingsGoal(value: number): void {
   } catch {
     throw new Error(
       "貯蓄目標の保存に失敗しました。ブラウザの空き容量やプライバシー設定をご確認ください。",
+    );
+  }
+}
+
+/**
+ * ユーザー自身の Anthropic APIキー（BYOK）を読み込む。未設定・壊れているときは ""。
+ * キーはこのブラウザにのみ保存し、抽出リクエスト時にヘッダーで中継する。
+ */
+export function loadApiKey(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const raw = window.localStorage.getItem(API_KEY_KEY);
+    const parsed = raw ? JSON.parse(raw) : "";
+    return typeof parsed === "string" ? parsed : "";
+  } catch {
+    return "";
+  }
+}
+
+/** APIキーを保存する。空・空白のみならエントリごと削除（クリア動作）。失敗は投げる。 */
+export function saveApiKey(key: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const trimmed = key.trim();
+    if (trimmed === "") {
+      window.localStorage.removeItem(API_KEY_KEY);
+    } else {
+      window.localStorage.setItem(API_KEY_KEY, JSON.stringify(trimmed));
+    }
+  } catch {
+    throw new Error(
+      "APIキーの保存に失敗しました。ブラウザの空き容量やプライバシー設定をご確認ください。",
     );
   }
 }

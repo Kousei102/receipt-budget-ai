@@ -7,6 +7,7 @@ import SummaryCharts from "@/components/SummaryCharts";
 import CategoryManager from "@/components/CategoryManager";
 import RecurringManager from "@/components/RecurringManager";
 import IncomeManager from "@/components/IncomeManager";
+import ApiKeySettings from "@/components/ApiKeySettings";
 import HelpModal from "@/components/HelpModal";
 import {
   DEFAULT_CATEGORIES,
@@ -16,6 +17,7 @@ import {
   type StoredReceipt,
 } from "@/lib/schema";
 import {
+  loadApiKey,
   loadIncomes,
   loadReceipts,
   loadCategories,
@@ -23,6 +25,7 @@ import {
   loadRecurringIncomes,
   loadSavingsGoal,
   newId,
+  saveApiKey,
   saveCategories,
   saveIncomes,
   saveReceipts,
@@ -125,6 +128,8 @@ export default function Home() {
   const [recurringIncomes, setRecurringIncomes] = useState<RecurringIncome[]>([]);
   // 貯蓄目標（月額・円）。0 は目標なし。「あと使える額」の計算に使う。
   const [savingsGoal, setSavingsGoal] = useState(0);
+  // ユーザー自身の Anthropic APIキー（BYOK）。"" は未設定（サーバーの env にフォールバック）。
+  const [apiKey, setApiKey] = useState("");
   // 使い方モーダルを自動で開くか。ロード完了時にデータ0件なら一度だけ true にする
   // （以後は変えない。ユーザーが閉じたあとに勝手に再表示しないため）。
   const [helpAutoOpen, setHelpAutoOpen] = useState(false);
@@ -218,6 +223,7 @@ export default function Home() {
       todayLocal().slice(0, 7),
     );
     setSavingsGoal(loadSavingsGoal());
+    setApiKey(loadApiKey());
     setRecurringIncomes(inc.defs);
     if (inc.created.length > 0) {
       const nextIncomes = [...inc.created, ...loadedIncomes];
@@ -296,6 +302,16 @@ export default function Home() {
     }
   }
 
+  function handleSetApiKey(key: string) {
+    const trimmed = key.trim();
+    setApiKey(trimmed);
+    try {
+      saveApiKey(trimmed);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "APIキーの保存に失敗しました。");
+    }
+  }
+
   /**
    * 1枚の画像を抽出して StoredReceipt の配列を返す（失敗は投げる）。
    * 紙のレシートは1件、決済アプリの履歴画面は取引ごとに複数件返る。
@@ -304,7 +320,11 @@ export default function Home() {
     const { base64, mediaType } = await fileToPayload(file);
     const res = await fetch("/api/extract", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        // BYOK: ユーザーのキーがあるときだけヘッダーで中継する（ボディには含めない）。
+        ...(apiKey ? { "x-anthropic-api-key": apiKey } : {}),
+      },
       body: JSON.stringify({ imageBase64: base64, mediaType, categories }),
     });
     const data: {
@@ -802,6 +822,8 @@ export default function Home() {
         onAdd={handleAddCategory}
         onDelete={handleDeleteCategory}
       />
+
+      <ApiKeySettings apiKey={apiKey} onSave={handleSetApiKey} />
     </main>
   );
 }

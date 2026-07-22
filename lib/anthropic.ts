@@ -60,15 +60,18 @@ export type ExtractResult =
   | { ok: true; imageKind: ImageKind; receipts: Receipt[] }
   | { ok: false; error: string };
 
-/** APIキーを検証してクライアントを生成する（未設定なら分かりやすいエラー） */
-export function getClient(): Anthropic {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+/**
+ * APIキーを検証してクライアントを生成する（未設定なら分かりやすいエラー）。
+ * BYOK: ユーザーが持ち込んだキーを優先し、無ければサーバーの環境変数にフォールバック。
+ */
+export function getClient(apiKey?: string): Anthropic {
+  const key = apiKey ?? process.env.ANTHROPIC_API_KEY;
+  if (!key) {
     throw new Error(
-      "ANTHROPIC_API_KEY が設定されていません。.env.local にキーを入れてください。",
+      "APIキーが設定されていません。アプリの「🔑 APIキー設定」で登録するか、.env.local に ANTHROPIC_API_KEY を設定してください。",
     );
   }
-  return new Anthropic({ apiKey });
+  return new Anthropic({ apiKey: key });
 }
 
 /**
@@ -84,8 +87,9 @@ export async function extractReceipts(
   imageBase64: string,
   mediaType: SupportedMediaType,
   categories: readonly string[] = DEFAULT_CATEGORIES,
+  apiKey?: string,
 ): Promise<ExtractResult> {
-  const client = getClient();
+  const client = getClient(apiKey);
 
   // その時点のカテゴリ一覧から tool スキーマを組み立て、enum で分類先を制約する。
   const jsonSchema = buildExtractionJsonSchema(categories);
