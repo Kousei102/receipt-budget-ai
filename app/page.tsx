@@ -7,7 +7,7 @@ import SummaryCharts from "@/components/SummaryCharts";
 import CategoryManager from "@/components/CategoryManager";
 import RecurringManager from "@/components/RecurringManager";
 import IncomeManager from "@/components/IncomeManager";
-import HelpSection from "@/components/HelpSection";
+import HelpModal from "@/components/HelpModal";
 import {
   DEFAULT_CATEGORIES,
   FALLBACK_CATEGORY,
@@ -122,9 +122,9 @@ export default function Home() {
   const [recurringIncomes, setRecurringIncomes] = useState<RecurringIncome[]>([]);
   // 貯蓄目標（月額・円）。0 は目標なし。「あと使える額」の計算に使う。
   const [savingsGoal, setSavingsGoal] = useState(0);
-  // 使い方セクションを最初から開くか。ロード完了時にデータ0件なら一度だけ true にする
-  // （以後は変えない。開閉はユーザーに任せるため、prop を揺らして DOM を上書きしない）。
-  const [helpDefaultOpen, setHelpDefaultOpen] = useState(false);
+  // 使い方モーダルを自動で開くか。ロード完了時にデータ0件なら一度だけ true にする
+  // （以後は変えない。ユーザーが閉じたあとに勝手に再表示しないため）。
+  const [helpAutoOpen, setHelpAutoOpen] = useState(false);
 
   // レシートの購入日と収入の日付から、選択できる月の一覧（新しい順）を作る。
   // 収入しかない月（給料日だけあった月など）も選べるように両方を見る。
@@ -229,8 +229,8 @@ export default function Home() {
       setIncomes(loadedIncomes);
     }
 
-    // 支出も収入も1件もない（自動計上分も含めて）＝初回ユーザーとみなし、使い方を開いておく。
-    setHelpDefaultOpen(
+    // 支出も収入も1件もない（自動計上分も含めて）＝初回ユーザーとみなし、使い方を自動表示する。
+    setHelpAutoOpen(
       loaded.length === 0 &&
         created.length === 0 &&
         loadedIncomes.length === 0 &&
@@ -637,14 +637,15 @@ export default function Home() {
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold">Nokori</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          収入・支出・定期費用を記録して、あと使える額がわかる家計管理アプリ。
-        </p>
+      <header className="mb-6 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Nokori</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            収入・支出・定期費用を記録して、あと使える額がわかる家計管理アプリ。
+          </p>
+        </div>
+        <HelpModal autoOpen={helpAutoOpen} />
       </header>
-
-      <HelpSection defaultOpen={helpDefaultOpen} />
 
       <UploadDropzone onFiles={handleFiles} disabled={loading} />
 
