@@ -9,6 +9,7 @@ import {
   TOTAL_MISMATCH_THRESHOLD,
   sumItemPrices,
   dominantCategory,
+  SOURCE_LABELS,
 } from "@/lib/format";
 
 type Props = {
@@ -16,16 +17,22 @@ type Props = {
   categories: string[];
   onUpdate: (id: string, patch: Partial<StoredReceipt>) => void;
   onDelete: (id: string) => void;
+  /** true なら最初から編集モードで開く（手入力で追加した直後のカード用）。 */
+  defaultEditing?: boolean;
+  /** 「完了」で編集を閉じたときに呼ぶ（空カードの破棄判定は親に委譲）。 */
+  onFinishEditing?: (id: string) => void;
 };
 
-/** 1枚のレシート抽出結果。要確認バッジ・手修正・削除に対応。 */
+/** 1件の支出レコード。要確認バッジ・手修正・削除に対応。 */
 export default function ReceiptCard({
   receipt,
   categories,
   onUpdate,
   onDelete,
+  defaultEditing,
+  onFinishEditing,
 }: Props) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(defaultEditing ?? false);
   const lowConfidence = receipt.confidence < LOW_CONFIDENCE_THRESHOLD;
   // レシート見出しのバッジ：品目カテゴリのうち最も支出が多いものを表示（派生値）。
   const headlineCategory = dominantCategory(receipt.items);
@@ -76,7 +83,7 @@ export default function ReceiptCard({
               {receipt.store || "（店名不明）"}
             </h3>
           )}
-          <p className="text-sm text-gray-500">
+          <p className="flex items-center gap-2 text-sm text-gray-500">
             {editing ? (
               <input
                 type="date"
@@ -86,6 +93,12 @@ export default function ReceiptCard({
               />
             ) : (
               receipt.date
+            )}
+            {/* AI抽出以外のレコードは入力経路を小さく示す */}
+            {receipt.source !== "receipt" && (
+              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                {SOURCE_LABELS[receipt.source]}
+              </span>
             )}
           </p>
         </div>
@@ -215,7 +228,10 @@ export default function ReceiptCard({
       <div className="mt-3 flex justify-end gap-3 text-sm">
         <button
           className="text-blue-600 hover:underline dark:text-blue-400"
-          onClick={() => setEditing((v) => !v)}
+          onClick={() => {
+            setEditing((v) => !v);
+            if (editing) onFinishEditing?.(receipt.id);
+          }}
         >
           {editing ? "完了" : "編集"}
         </button>

@@ -7,19 +7,22 @@ import { DEFAULT_CATEGORIES, FALLBACK_CATEGORY, type Category, type StoredReceip
 const KEY = "receipt-kakeibo:receipts";
 const CAT_KEY = "receipt-kakeibo:categories";
 
-/** 旧形式（品目にカテゴリが無く、レシート全体に category を持っていた頃）の型。 */
-type LegacyReceipt = Omit<StoredReceipt, "items"> & {
+/** 旧形式（品目カテゴリや source が無かった頃）の型。 */
+type LegacyReceipt = Omit<StoredReceipt, "items" | "source"> & {
   category?: Category; // 旧: レシート全体のカテゴリ
+  source?: StoredReceipt["source"]; // 旧: source 導入前は未保存
   items: { name: string; price: number; category?: Category }[];
 };
 
 /**
  * 旧形式の保存データを新形式に寄せる。
- * カテゴリの無い品目には、旧レシートカテゴリ→無ければ「その他」を補う。
+ * - カテゴリの無い品目には、旧レシートカテゴリ→無ければ「その他」を補う。
+ * - source の無いレコードは全て画像抽出だった頃のものなので "receipt" を補う。
  */
 function migrate(list: LegacyReceipt[]): StoredReceipt[] {
   return list.map((r) => ({
     ...r,
+    source: r.source ?? "receipt",
     items: (r.items ?? []).map((it) => ({
       name: it.name,
       price: it.price,

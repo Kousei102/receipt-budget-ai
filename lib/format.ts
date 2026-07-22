@@ -3,7 +3,30 @@ import {
   FALLBACK_CATEGORY,
   type Category,
   type ReceiptItem,
+  type ReceiptSource,
+  type StoredReceipt,
 } from "./schema";
+
+/** 入力経路の表示名（カードのバッジ・CSVの種別列で共通利用）。 */
+export const SOURCE_LABELS: Record<ReceiptSource, string> = {
+  receipt: "レシート",
+  manual: "手入力",
+  recurring: "定期",
+};
+
+/**
+ * 「まだ何も入力されていないカード」かどうか。
+ * 手入力カードを空のまま「完了」したときにキャンセル扱いで破棄する判定に使う。
+ */
+export function isEmptyReceipt(
+  r: Pick<StoredReceipt, "store" | "total" | "items">,
+): boolean {
+  return (
+    r.store.trim() === "" &&
+    r.total === 0 &&
+    r.items.every((it) => it.name.trim() === "" && it.price === 0)
+  );
+}
 
 /** 既定カテゴリの色。グラフとカードのバッジで共通利用する。 */
 export const DEFAULT_CATEGORY_COLORS: Record<

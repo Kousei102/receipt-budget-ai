@@ -48,10 +48,22 @@ export const receiptSchema = z.object({
 export type ReceiptItem = z.infer<typeof receiptItemSchema>;
 export type Receipt = z.infer<typeof receiptSchema>;
 
-/** localStorage に保存するときは id と作成日時を付与する */
+/**
+ * レコードの入力経路。
+ * - "receipt": 画像からのAI抽出（紙レシート・決済アプリのスクショ含む。挙動が同一なので区別しない）
+ * - "manual": 手入力
+ * - "recurring": 定期支出の自動計上
+ */
+export type ReceiptSource = "receipt" | "manual" | "recurring";
+
+/** localStorage に保存するときは id・作成日時・入力経路を付与する */
 export type StoredReceipt = Receipt & {
   id: string;
   createdAt: string; // ISO文字列
+  source: ReceiptSource;
+  // 定期支出（source: "recurring"）の冪等タグ。どの定義のどの月分かを示す。
+  recurringId?: string;
+  recurringMonth?: string; // "YYYY-MM"
 };
 
 /**

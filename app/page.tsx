@@ -13,7 +13,7 @@ import {
   saveCategories,
   saveReceipts,
 } from "@/lib/storage";
-import { formatMonthLabel, yen } from "@/lib/format";
+import { formatMonthLabel, isEmptyReceipt, yen } from "@/lib/format";
 import { receiptsToCsv } from "@/lib/csv";
 import { findDuplicate } from "@/lib/duplicate";
 
@@ -67,6 +67,16 @@ async function fileToPayload(
 /** 重複と判定され保存を見送った候補（ユーザーが手動で「追加する」まで持っておく）。 */
 type PendingDuplicate = { fileName: string; stored: StoredReceipt };
 
+/**
+ * 今日の日付をローカルタイムで "YYYY-MM-DD" にする。
+ * toISOString() は UTC 基準のため、日本時間の深夜に日付がずれる。
+ */
+function todayLocal(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export default function Home() {
   const [receipts, setReceipts] = useState<StoredReceipt[]>([]);
   const [loading, setLoading] = useState(false);
@@ -79,6 +89,8 @@ export default function Home() {
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   // ユーザー編集可能なカテゴリ一覧（初期値は既定。マウント後に localStorage から復元）。
   const [categories, setCategories] = useState<string[]>([...DEFAULT_CATEGORIES]);
+  // 「＋手入力」で追加した直後のカードの id。このカードだけ編集モードで開く。
+  const [newManualId, setNewManualId] = useState<string | null>(null);
 
   // レシートの購入日から、選択できる月の一覧（新しい順）を作る。
   const months = useMemo(() => {
@@ -155,7 +167,42 @@ export default function Home() {
     if (!data.ok || !data.receipt) {
       throw new Error(data.error ?? "レシートを読み取れませんでした。");
     }
-    return { ...data.receipt, id: newId(), createdAt: new Date().toISOString() };
+    return {
+      ...data.receipt,
+      id: newId(),
+      createdAt: new Date().toISOString(),
+      source: "receipt",
+    };
+  }
+
+  /** 空の手入力カードを先頭に追加し、編集モードで開く。 */
+  function handleAddManual() {
+    const today = todayLocal();
+    const stored: StoredReceipt = {
+      id: newId(),
+      createdAt: new Date().toISOString(),
+      source: "manual",
+      store: "",
+      date: today,
+      total: 0,
+      confidence: 1, // 人間の入力なので要確認バッジは不要
+      items: [{ name: "", price: 0, category: FALLBACK_CATEGORY }],
+    };
+    persist([stored, ...receipts]);
+    setNewManualId(stored.id);
+    // 過去の月でフィルタ中だと追加したカードが見えないため、当月表示に切り替える。
+    if (effectiveMonth !== "all" && !today.startsWith(effectiveMonth)) {
+      setSelectedMonth(today.slice(0, 7));
+    }
+  }
+
+  /** カードの「完了」押下時。手入力カードが空のままなら破棄する（キャンセル扱い）。 */
+  function handleFinishEditing(id: string) {
+    if (id === newManualId) setNewManualId(null);
+    const r = receipts.find((x) => x.id === id);
+    if (r && r.source === "manual" && isEmptyReceipt(r)) {
+      handleDelete(id);
+    }
   }
 
   /**
@@ -277,6 +324,18 @@ export default function Home() {
 
       <UploadDropzone onFiles={handleFiles} disabled={loading} />
 
+      <div className="mt-3 text-center">
+        <button
+          onClick={handleAddManual}
+          className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+        >
+          ＋ 手入力で追加
+        </button>
+        <span className="ml-2 text-xs text-gray-400">
+          レシートのない現金支出などはこちら
+        </span>
+      </div>
+
       {progress && (
         <p className="mt-4 text-center text-sm text-gray-500">
           {progress.total}枚中 {progress.done}枚を処理しました…
@@ -365,7 +424,7 @@ export default function Home() {
       <section className="mt-8">
         {receipts.length === 0 ? (
           <p className="rounded-lg border border-dashed border-gray-300 py-10 text-center text-sm text-gray-500 dark:border-gray-700">
-            まだレシートがありません。上の枠に画像をアップロードして始めましょう。
+            まだ支出の記録がありません。上の枠に画像をアップロードするか、「＋ 手入力で追加」から始めましょう。
           </p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
@@ -376,6 +435,8 @@ export default function Home() {
                 categories={categories}
                 onUpdate={handleUpdate}
                 onDelete={handleDelete}
+                defaultEditing={r.id === newManualId}
+                onFinishEditing={handleFinishEditing}
               />
             ))}
           </div>

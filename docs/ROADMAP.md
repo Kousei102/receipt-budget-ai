@@ -59,6 +59,10 @@
   - なぜ: 同じレシートを誤って複数回アップロードすると支出集計が二重計上される。B-4（複数枚アップロード）で同じ写真を誤選択するリスクも増えた。
   - 何を: `lib/duplicate.ts` で店名(正規化)・日付・合計金額の3点一致を重複と判定。抽出結果を既存レシートと同バッチ内の追加分の両方に照合し、重複は自動で保存をスキップして一覧表示。「追加する」ボタンで誤検知を手動救済できる。
 
+- [x] **D-3. 支出の手入力（レシート以外の支出形態・その1）**
+  - なぜ: 記録できるのがレシート画像の読み取り結果のみで、現金支出などレシートのない支出を計上できなかった。
+  - 何を: `StoredReceipt` に入力経路 `source`（`"receipt" | "manual" | "recurring"`）を追加し、`migrate()` で既存データに `"receipt"` を補完。「＋手入力で追加」ボタンで空レコード（`source: "manual"`、`confidence: 1`、当日日付）を編集モードで追加（`ReceiptCard` の既存編集UIを流用）。空のまま「完了」したカードは破棄（キャンセル扱い）。CSV に「種別」列を追加。
+
 - [x] **D-2. カテゴリのユーザー追加・削除**
   - なぜ: カテゴリが固定6種のコンパイル時定数で、家計に合わせて増減できなかった。
   - 何を: カテゴリを localStorage の実行時データに格上げ（`lib/storage.ts` の `loadCategories`/`saveCategories`）。`components/CategoryManager.tsx` で追加・削除 UI を提供。抽出時は現在の一覧を `/api/extract` に渡し `buildReceiptJsonSchema` が Claude の tool `enum` を動的生成（追加カテゴリも自動分類対象）。色は `lib/format.ts` の `categoryColor()` が任意名へ自動割り当て。削除時は該当品目を「その他」へ付け替え、`FALLBACK_CATEGORY`（その他）は削除不可。
