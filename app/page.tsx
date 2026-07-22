@@ -6,6 +6,7 @@ import ReceiptCard from "@/components/ReceiptCard";
 import SummaryCharts from "@/components/SummaryCharts";
 import CategoryManager from "@/components/CategoryManager";
 import RecurringManager from "@/components/RecurringManager";
+import IncomeManager from "@/components/IncomeManager";
 import {
   DEFAULT_CATEGORIES,
   FALLBACK_CATEGORY,
@@ -14,15 +15,26 @@ import {
   type StoredReceipt,
 } from "@/lib/schema";
 import {
+  loadIncomes,
   loadReceipts,
   loadCategories,
   loadRecurring,
+  loadRecurringIncomes,
+  loadSavingsGoal,
   newId,
   saveCategories,
+  saveIncomes,
   saveReceipts,
   saveRecurring,
+  saveRecurringIncomes,
+  saveSavingsGoal,
 } from "@/lib/storage";
 import { materializeRecurring, type RecurringExpense } from "@/lib/recurring";
+import {
+  materializeRecurringIncome,
+  type IncomeRecord,
+  type RecurringIncome,
+} from "@/lib/income";
 import { formatMonthLabel, isEmptyReceipt, yen } from "@/lib/format";
 import { receiptsToCsv } from "@/lib/csv";
 import { findDuplicate, findLooseCrossSourceDuplicate } from "@/lib/duplicate";
@@ -103,16 +115,23 @@ export default function Home() {
   const [newManualId, setNewManualId] = useState<string | null>(null);
   // 定期支出の定義一覧（家賃・サブスク等）。ロード時に未計上の月ぶんを自動計上する。
   const [recurring, setRecurring] = useState<RecurringExpense[]>([]);
+  // 収入レコード（手入力＋定期収入の自動計上）。支出とは別管理（lib/income.ts 参照）。
+  const [incomes, setIncomes] = useState<IncomeRecord[]>([]);
+  // 定期収入の定義一覧（給与等）。ロード時に未計上の月ぶんを自動計上する。
+  const [recurringIncomes, setRecurringIncomes] = useState<RecurringIncome[]>([]);
+  // 貯蓄目標（月額・円）。0 は目標なし。「あと使える額」の計算に使う。
+  const [savingsGoal, setSavingsGoal] = useState(0);
 
-  // レシートの購入日から、選択できる月の一覧（新しい順）を作る。
+  // レシートの購入日と収入の日付から、選択できる月の一覧（新しい順）を作る。
+  // 収入しかない月（給料日だけあった月など）も選べるように両方を見る。
   const months = useMemo(() => {
     const set = new Set<string>();
-    for (const r of receipts) {
+    for (const r of [...receipts, ...incomes]) {
       const ym = r.date?.slice(0, 7);
       if (ym && /^\d{4}-\d{2}$/.test(ym)) set.add(ym);
     }
     return Array.from(set).sort().reverse();
-  }, [receipts]);
+  }, [receipts, incomes]);
 
   // 選択中の月が（削除などで）無くなったら全期間にフォールバックする。
   const effectiveMonth =
@@ -128,6 +147,23 @@ export default function Home() {
         : receipts.filter((r) => r.date?.startsWith(effectiveMonth)),
     [receipts, effectiveMonth],
   );
+
+  // 収入もレシートと同じ月フィルタで絞り込む（収支サマリーと収入一覧で使う）。
+  const visibleIncomes = useMemo(() => {
+    const list =
+      effectiveMonth === "all"
+        ? incomes
+        : incomes.filter((r) => r.date?.startsWith(effectiveMonth));
+    return [...list].sort((a, b) => (a.date < b.date ? 1 : -1)); // 新しい順
+  }, [incomes, effectiveMonth]);
+
+  // 「あと使える額」という言い方は当月にしか意味がないため、期間種別で表示を切り替える。
+  const periodKind: "current" | "past" | "all" =
+    effectiveMonth === "all"
+      ? "all"
+      : effectiveMonth === todayLocal().slice(0, 7)
+        ? "current"
+        : "past";
 
   // カテゴリごとの使用品目数（カテゴリ管理での「使用中」表示・削除確認に使う）。
   const categoryUsage = useMemo(() => {
@@ -166,6 +202,28 @@ export default function Home() {
     } else {
       setReceipts(loaded);
     }
+
+    // 収入側も同様に復元し、定期収入の未計上分を自動計上する（保存順序の約束も同じ）。
+    const loadedIncomes = loadIncomes();
+    const inc = materializeRecurringIncome(
+      loadRecurringIncomes(),
+      loadedIncomes,
+      todayLocal().slice(0, 7),
+    );
+    setSavingsGoal(loadSavingsGoal());
+    setRecurringIncomes(inc.defs);
+    if (inc.created.length > 0) {
+      const nextIncomes = [...inc.created, ...loadedIncomes];
+      setIncomes(nextIncomes);
+      try {
+        saveIncomes(nextIncomes);
+        saveRecurringIncomes(inc.defs);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "データの保存に失敗しました。");
+      }
+    } else {
+      setIncomes(loadedIncomes);
+    }
   }, []);
 
   function persist(next: StoredReceipt[]) {
@@ -193,6 +251,33 @@ export default function Home() {
       saveRecurring(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : "定期支出の保存に失敗しました。");
+    }
+  }
+
+  function persistIncomes(next: IncomeRecord[]) {
+    setIncomes(next);
+    try {
+      saveIncomes(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "収入の保存に失敗しました。");
+    }
+  }
+
+  function persistRecurringIncomes(next: RecurringIncome[]) {
+    setRecurringIncomes(next);
+    try {
+      saveRecurringIncomes(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "定期収入の保存に失敗しました。");
+    }
+  }
+
+  function handleSetSavingsGoal(value: number) {
+    setSavingsGoal(value);
+    try {
+      saveSavingsGoal(value);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "貯蓄目標の保存に失敗しました。");
     }
   }
 
@@ -438,6 +523,88 @@ export default function Home() {
     persistRecurring(recurring.filter((d) => d.id !== id));
   }
 
+  /** 手入力の収入を追加する。追加した月が見えるよう、必要なら月フィルタを切り替える。 */
+  function handleAddIncome(input: { name: string; date: string; amount: number }) {
+    const record: IncomeRecord = {
+      id: newId(),
+      createdAt: new Date().toISOString(),
+      source: "manual",
+      ...input,
+    };
+    persistIncomes([record, ...incomes]);
+    if (effectiveMonth !== "all" && !input.date.startsWith(effectiveMonth)) {
+      setSelectedMonth(input.date.slice(0, 7));
+    }
+  }
+
+  function handleDeleteIncome(id: string) {
+    persistIncomes(incomes.filter((r) => r.id !== id));
+  }
+
+  /** 定期収入の定義を追加し、開始月から当月までの未計上分をその場で計上する。 */
+  function handleAddRecurringIncome(
+    input: Omit<RecurringIncome, "id" | "createdAt" | "lastPostedMonth">,
+  ) {
+    const def: RecurringIncome = {
+      ...input,
+      id: newId(),
+      createdAt: new Date().toISOString(),
+    };
+    const { defs, created } = materializeRecurringIncome(
+      [def],
+      incomes,
+      todayLocal().slice(0, 7),
+    );
+    const nextDefs = [...recurringIncomes, ...defs];
+    const nextIncomes = [...created, ...incomes];
+    setIncomes(nextIncomes);
+    setRecurringIncomes(nextDefs);
+    try {
+      // 定期支出と同じく、レコードの保存に成功してからカーソルを保存する。
+      saveIncomes(nextIncomes);
+      saveRecurringIncomes(nextDefs);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "データの保存に失敗しました。");
+    }
+  }
+
+  /**
+   * 定期収入の定義を変更する。今後の自動計上分にのみ反映され、計上済みレコードは触らない。
+   * 変更後の定義で即 materialize し直す（lastPostedMonth が主ガードなので二重計上はしない）。
+   */
+  function handleUpdateRecurringIncome(
+    id: string,
+    patch: Omit<RecurringIncome, "id" | "createdAt" | "lastPostedMonth">,
+  ) {
+    const updated = recurringIncomes.map((d) =>
+      d.id === id ? { ...d, ...patch } : d,
+    );
+    const { defs, created } = materializeRecurringIncome(
+      updated,
+      incomes,
+      todayLocal().slice(0, 7),
+    );
+    if (created.length === 0) {
+      persistRecurringIncomes(defs);
+      return;
+    }
+    const nextIncomes = [...created, ...incomes];
+    setIncomes(nextIncomes);
+    setRecurringIncomes(defs);
+    try {
+      // 追加時と同じく、レコードの保存に成功してからカーソルを保存する。
+      saveIncomes(nextIncomes);
+      saveRecurringIncomes(defs);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "データの保存に失敗しました。");
+    }
+  }
+
+  /** 定期収入の定義を削除する。計上済みのレコードは残し、今後の自動計上だけ止める。 */
+  function handleDeleteRecurringIncome(id: string) {
+    persistRecurringIncomes(recurringIncomes.filter((d) => d.id !== id));
+  }
+
   /** 表示中（月フィルタ適用後）のレシートを CSV でダウンロードする。 */
   function handleExport() {
     // Excel(日本語)で文字化けしないよう先頭に BOM を付ける。
@@ -527,7 +694,7 @@ export default function Home() {
         </div>
       )}
 
-      {visibleReceipts.length > 0 && (
+      {(visibleReceipts.length > 0 || visibleIncomes.length > 0) && (
         <div className="mt-8 flex items-center justify-between gap-2">
           <button
             onClick={handleExport}
@@ -558,9 +725,14 @@ export default function Home() {
         </div>
       )}
 
-      {visibleReceipts.length > 0 && (
+      {(visibleReceipts.length > 0 || visibleIncomes.length > 0) && (
         <section className="mt-4">
-          <SummaryCharts receipts={visibleReceipts} />
+          <SummaryCharts
+            receipts={visibleReceipts}
+            incomes={visibleIncomes}
+            savingsGoal={savingsGoal}
+            periodKind={periodKind}
+          />
         </section>
       )}
 
@@ -585,6 +757,18 @@ export default function Home() {
           </div>
         )}
       </section>
+
+      <IncomeManager
+        incomes={visibleIncomes}
+        defs={recurringIncomes}
+        savingsGoal={savingsGoal}
+        onAddIncome={handleAddIncome}
+        onDeleteIncome={handleDeleteIncome}
+        onAddDef={handleAddRecurringIncome}
+        onUpdateDef={handleUpdateRecurringIncome}
+        onDeleteDef={handleDeleteRecurringIncome}
+        onSetSavingsGoal={handleSetSavingsGoal}
+      />
 
       <RecurringManager
         defs={recurring}

@@ -6,7 +6,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # レシート家計簿AI
 
-レシート画像・決済アプリのスクショ・クレカ明細のスクショを Claude Vision で読み取り、店名・日付・品目・金額・カテゴリを構造化データとして抽出し、支出をカテゴリ別に集計・可視化する家計簿アプリ。手入力・定期支出（家賃・サブスクの自動計上）にも対応。ポートフォリオ作品。
+レシート画像・決済アプリのスクショ・クレカ明細のスクショを Claude Vision で読み取り、店名・日付・品目・金額・カテゴリを構造化データとして抽出し、支出をカテゴリ別に集計・可視化する家計簿アプリ。手入力・定期支出（家賃・サブスクの自動計上）・収入の記録（給与等の定期収入含む）と「あと使える額」表示にも対応。ポートフォリオ作品。
 
 - 本番URL: https://receipt-budget-ai.vercel.app/
 - GitHub: https://github.com/Kousei102/receipt-budget-ai （デフォルトブランチは `master`）
@@ -25,10 +25,12 @@ Next.js 16 (App Router) / React 19 / TypeScript / Tailwind CSS v4 / Recharts / Z
 - `lib/anthropic.ts` — Claude 呼び出し（`extractReceipts`、1画像から複数レコード）。**Tool Use + tool_choice で構造化出力を強制し、Zod で検証**する中核
 - `app/api/extract/route.ts` — 画像を受けて抽出する API（Node ランタイム）。レスポンスは `{ ok, imageKind, receipts }`（`imageKind` でクライアントが `source` を切り替える）
 - `lib/duplicate.ts` — 重複検知。厳密一致（`findDuplicate`：店名・日付・合計の3点一致）と、カード明細×レシートの二重計上向けの緩い一致（`findLooseCrossSourceDuplicate`）の二段構え
-- `lib/storage.ts` — localStorage 読み書き（レシート＋カテゴリ一覧＋定期支出定義。将来 DB に差し替える場合はここだけ変える）
-- `lib/recurring.ts` — 定期支出の定義型と自動計上ロジック（`materializeRecurring`、冪等）
+- `lib/storage.ts` — localStorage 読み書き（レシート＋カテゴリ一覧＋定期支出定義＋収入＋定期収入定義＋貯蓄目標。将来 DB に差し替える場合はここだけ変える）
+- `lib/recurring.ts` — 定期支出の定義型と自動計上ロジック（`materializeRecurring`、冪等）＋ 月列挙の共通ヘルパー（`enumerateMonthsToPost`、定期収入と共有）
+- `lib/income.ts` — 収入レコード（`IncomeRecord`）と定期収入の定義型・自動計上（`materializeRecurringIncome`、冪等）
+- `lib/balance.ts` — 収支サマリーの集計（`calcBalance`。あと使える額 = 収入 − 貯蓄目標 − 支出）
 - `lib/format.ts` — 金額整形・カテゴリ色（`categoryColor`）・要確認しきい値・入力経路ラベル（`SOURCE_LABELS`）
-- `components/` — UploadDropzone / ReceiptCard / SummaryCharts / CategoryManager / RecurringManager
+- `components/` — UploadDropzone / ReceiptCard / SummaryCharts / CategoryManager / RecurringManager / IncomeManager
 - `eval/run-eval.ts` — 精度評価スクリプト
 
 ## 設計上の約束・注意点
@@ -40,3 +42,6 @@ Next.js 16 (App Router) / React 19 / TypeScript / Tailwind CSS v4 / Recharts / Z
 - 支出レコード（`StoredReceipt`）は入力経路を `source`（`"receipt" | "manual" | "recurring" | "card"`）で区別する。集計・月フィルタ・CSVは `date` / `items[].category` / `items[].price` だけを見るので、この形に合えば入力経路を問わず既存の表示・集計がそのまま動く。手入力・定期支出は `confidence: 1`（要確認バッジを出さない）。
 - クレカ明細の取り込みは**利用日ベース**（`date` に利用日。引き落とし日は扱わない）。明細由来は `source: "card"`。緩い重複判定（店名の NFKC 正規化＋部分一致・日付±3日・金額±1円）は**「card vs 非card」のペアに限定**して適用する — 全レコード間に広げると同店同額の正当な買い物を誤検知するため。重複候補の最終判断は常にユーザー（重複確認UI）。
 - 定期支出の自動計上は**冪等**にする：定義側の `lastPostedMonth` カーソルが主ガード（計上済みレコードをユーザーが削除しても復活させない）。レコード保存に成功してからカーソルを保存する順序を崩さない。定義の編集は**今後の計上分にのみ反映**し、計上済みレコードは書き換えない。
+- 収入（`IncomeRecord`）は**支出（`StoredReceipt`）と混ぜない**：集計・CSV・重複検知はすべて支出前提のため、別の型・別の localStorage キーで管理する（`lib/income.ts` / `lib/storage.ts` の `loadIncomes` 等）。入力経路は手入力と定期のみ（画像からのAI抽出は対象外）。CSV は引き続き**支出専用**（v1）。
+- 定期収入（給与等）の冪等セマンティクスは**定期支出と同一**：`lastPostedMonth` カーソルが主ガード、レコード保存成功→カーソル保存の順序、定義の編集は今後の計上分のみ。当月分は給料日未到来でも計上する（定期支出と対称。「あと使える額」が月初から安定する）。月列挙ロジックは `lib/recurring.ts` の `enumerateMonthsToPost` を両者で共有する。
+- 「あと使える額」= 今月の収入 − 貯蓄目標 − 今月の支出（`lib/balance.ts` の `calcBalance`）。支出は `items[].price` の合計を使い、円グラフの集計と必ず一致させる（`total` は使わない）。当月の定期支出はロード時に自動計上済みなので固定費の先取りは追加計算不要。「あと使える」という表現は**当月のみ**（過去月は「収支」、全期間は合計のみ）。貯蓄目標はグローバルな月額1つ（月別設定はしない）。収入も貯蓄目標も未設定なら収支サマリーは表示しない。
