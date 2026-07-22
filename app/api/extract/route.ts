@@ -4,6 +4,7 @@ import {
   SUPPORTED_MEDIA_TYPES,
   type SupportedMediaType,
 } from "@/lib/anthropic";
+import { DEFAULT_CATEGORIES } from "@/lib/schema";
 
 // APIキーを使うのでサーバー(Node)側で実行する。ブラウザにキーは出さない。
 export const runtime = "nodejs";
@@ -19,6 +20,16 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const imageBase64: unknown = body?.imageBase64;
     const mediaType: unknown = body?.mediaType;
+    const rawCategories: unknown = body?.categories;
+
+    // クライアントが送ってきた現在のカテゴリ一覧で分類先を制約する。
+    // 不正・未送信なら既定一覧にフォールバック（後方互換・防御）。
+    const categories =
+      Array.isArray(rawCategories) &&
+      rawCategories.length > 0 &&
+      rawCategories.every((c) => typeof c === "string" && c.length > 0)
+        ? (rawCategories as string[])
+        : [...DEFAULT_CATEGORIES];
 
     if (typeof imageBase64 !== "string" || imageBase64.length === 0) {
       return NextResponse.json(
@@ -45,6 +56,7 @@ export async function POST(req: NextRequest) {
     const result = await extractReceipt(
       imageBase64,
       mediaType as SupportedMediaType,
+      categories,
     );
     if (!result.ok) {
       return NextResponse.json(result, { status: 422 });

@@ -1,5 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { receiptSchema, receiptJsonSchema, type Receipt } from "./schema";
+import {
+  receiptSchema,
+  buildReceiptJsonSchema,
+  DEFAULT_CATEGORIES,
+  FALLBACK_CATEGORY,
+  type Receipt,
+} from "./schema";
 
 /**
  * Vision 対応モデル。精度を上げたいときは "claude-opus-4-8" に差し替え可能。
@@ -54,8 +60,12 @@ export function getClient(): Anthropic {
 export async function extractReceipt(
   imageBase64: string,
   mediaType: SupportedMediaType,
+  categories: readonly string[] = DEFAULT_CATEGORIES,
 ): Promise<ExtractResult> {
   const client = getClient();
+
+  // その時点のカテゴリ一覧から tool スキーマを組み立て、enum で分類先を制約する。
+  const jsonSchema = buildReceiptJsonSchema(categories);
 
   const message = await client.messages.create({
     model: MODEL,
@@ -65,7 +75,7 @@ export async function extractReceipt(
       {
         name: TOOL_NAME,
         description: "レシートから抽出した支出データを記録する",
-        input_schema: receiptJsonSchema as unknown as Anthropic.Tool.InputSchema,
+        input_schema: jsonSchema as unknown as Anthropic.Tool.InputSchema,
       },
     ],
     tool_choice: { type: "tool", name: TOOL_NAME },
@@ -99,5 +109,14 @@ export async function extractReceipt(
     };
   }
 
-  return { ok: true, receipt: parsed.data };
+  // enum で制約していても、万一一覧外のカテゴリが返ったらフォールバックに寄せる（防御）。
+  const allowed = new Set(categories);
+  const receipt: Receipt = {
+    ...parsed.data,
+    items: parsed.data.items.map((it) =>
+      allowed.has(it.category) ? it : { ...it, category: FALLBACK_CATEGORY },
+    ),
+  };
+
+  return { ok: true, receipt };
 }

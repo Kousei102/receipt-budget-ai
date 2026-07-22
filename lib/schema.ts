@@ -1,9 +1,12 @@
 import { z } from "zod";
 
 /**
- * 支出カテゴリ。UI のグラフ色分けと、モデルに渡す enum の両方でこの1か所を使う。
+ * 支出カテゴリの初期値（シード）。
+ * カテゴリはユーザーが実行時に追加・削除でき、実体は localStorage に保存する
+ * （`lib/storage.ts` の loadCategories/saveCategories）。ここはあくまで初期一覧と、
+ * まだ保存が無いとき・壊れているときのフォールバック。
  */
-export const CATEGORIES = [
+export const DEFAULT_CATEGORIES = [
   "食費",
   "日用品",
   "外食",
@@ -12,14 +15,20 @@ export const CATEGORIES = [
   "その他",
 ] as const;
 
-export type Category = (typeof CATEGORIES)[number];
+/** どのカテゴリにも当てはめられないときの受け皿。削除不可の恒久カテゴリ。 */
+export const FALLBACK_CATEGORY = "その他";
+
+// カテゴリは実行時に増減するため、固定ユニオンではなく文字列として扱う。
+export type Category = string;
 
 /** レシート1品目 */
 export const receiptItemSchema = z.object({
   name: z.string(),
   // NaN / Infinity は弾く。値引き行を品目として返す可能性を残すため負値は許容する。
   price: z.number().finite(),
-  category: z.enum(CATEGORIES),
+  // カテゴリは実行時に増減するので enum で固定できない。空でない文字列だけを要求し、
+  // 「現在の一覧に属するか」はサーバー側（lib/anthropic.ts）で照合し外れ値をフォールバックに寄せる。
+  category: z.string().min(1),
 });
 
 /**
@@ -46,52 +55,55 @@ export type StoredReceipt = Receipt & {
 };
 
 /**
- * Claude の Tool Use に渡す JSON Schema。
+ * Claude の Tool Use に渡す JSON Schema を、その時点のカテゴリ一覧から組み立てる。
  * receiptSchema と対になっており、モデルにこの形での出力を強制する。
+ * category の enum は実行時のユーザー定義カテゴリで動的に差し替わる（追加分も自動分類の対象になる）。
  * （Zod と二重管理になるが、モデル向けには description を細かく書きたいので手書きする）
  */
-export const receiptJsonSchema = {
-  type: "object",
-  properties: {
-    store: {
-      type: "string",
-      description: "店名。読み取れなければ空文字にする。",
-    },
-    date: {
-      type: "string",
-      description:
-        "購入日を YYYY-MM-DD 形式で。年がレシートに無ければ文脈から推定し、無理なら今年とする。",
-    },
-    items: {
-      type: "array",
-      description: "購入した品目の一覧。",
+export function buildReceiptJsonSchema(categories: readonly string[]) {
+  return {
+    type: "object",
+    properties: {
+      store: {
+        type: "string",
+        description: "店名。読み取れなければ空文字にする。",
+      },
+      date: {
+        type: "string",
+        description:
+          "購入日を YYYY-MM-DD 形式で。年がレシートに無ければ文脈から推定し、無理なら今年とする。",
+      },
       items: {
-        type: "object",
-        properties: {
-          name: { type: "string", description: "品目名" },
-          price: { type: "number", description: "税込価格（円、整数または小数）" },
-          category: {
-            type: "string",
-            enum: [...CATEGORIES],
-            description:
-              "この品目自体の支出カテゴリを1つ選ぶ。例: 食品→食費、飲食店での飲食→外食、洗剤・トイレットペーパー等→日用品、電車・バス→交通、書籍・ゲーム等→娯楽、どれにも当てはまらない→その他。",
+        type: "array",
+        description: "購入した品目の一覧。",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string", description: "品目名" },
+            price: { type: "number", description: "税込価格（円、整数または小数）" },
+            category: {
+              type: "string",
+              enum: [...categories],
+              description:
+                "この品目自体の支出カテゴリを、上記 enum の中から1つ選ぶ。例: 食品→食費、飲食店での飲食→外食、洗剤・トイレットペーパー等→日用品、電車・バス→交通、書籍・ゲーム等→娯楽、どれにも当てはまらない→その他。",
+            },
           },
+          required: ["name", "price", "category"],
         },
-        required: ["name", "price", "category"],
+      },
+      total: {
+        type: "number",
+        minimum: 0,
+        description: "合計金額（円）。値引き後の実支払額。0以上。",
+      },
+      confidence: {
+        type: "number",
+        minimum: 0,
+        maximum: 1,
+        description:
+          "抽出全体への自信度 0〜1。ぼやけ・見切れ・レシート以外の画像など不確かなほど低くする。",
       },
     },
-    total: {
-      type: "number",
-      minimum: 0,
-      description: "合計金額（円）。値引き後の実支払額。0以上。",
-    },
-    confidence: {
-      type: "number",
-      minimum: 0,
-      maximum: 1,
-      description:
-        "抽出全体への自信度 0〜1。ぼやけ・見切れ・レシート以外の画像など不確かなほど低くする。",
-    },
-  },
-  required: ["store", "date", "items", "total", "confidence"],
-} as const;
+    required: ["store", "date", "items", "total", "confidence"],
+  } as const;
+}

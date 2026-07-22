@@ -1,14 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import type { ReceiptItem, StoredReceipt } from "@/lib/schema";
 import {
-  CATEGORIES,
-  type Category,
-  type ReceiptItem,
-  type StoredReceipt,
-} from "@/lib/schema";
-import {
-  CATEGORY_COLORS,
+  categoryColor,
   yen,
   LOW_CONFIDENCE_THRESHOLD,
   TOTAL_MISMATCH_THRESHOLD,
@@ -18,12 +13,18 @@ import {
 
 type Props = {
   receipt: StoredReceipt;
+  categories: string[];
   onUpdate: (id: string, patch: Partial<StoredReceipt>) => void;
   onDelete: (id: string) => void;
 };
 
 /** 1枚のレシート抽出結果。要確認バッジ・手修正・削除に対応。 */
-export default function ReceiptCard({ receipt, onUpdate, onDelete }: Props) {
+export default function ReceiptCard({
+  receipt,
+  categories,
+  onUpdate,
+  onDelete,
+}: Props) {
   const [editing, setEditing] = useState(false);
   const lowConfidence = receipt.confidence < LOW_CONFIDENCE_THRESHOLD;
   // レシート見出しのバッジ：品目カテゴリのうち最も支出が多いものを表示（派生値）。
@@ -90,7 +91,7 @@ export default function ReceiptCard({ receipt, onUpdate, onDelete }: Props) {
         </div>
         <span
           className="shrink-0 rounded-full px-3 py-1 text-sm font-medium text-white"
-          style={{ backgroundColor: CATEGORY_COLORS[headlineCategory] }}
+          style={{ backgroundColor: categoryColor(headlineCategory) }}
           title="このレシートで最も支出が多いカテゴリ（品目から自動判定）"
         >
           {headlineCategory}
@@ -138,10 +139,14 @@ export default function ReceiptCard({ receipt, onUpdate, onDelete }: Props) {
                       className="shrink-0 rounded border border-gray-300 px-1 py-1 dark:border-gray-700 dark:bg-gray-800"
                       value={item.category}
                       onChange={(e) =>
-                        updateItem(i, { category: e.target.value as Category })
+                        updateItem(i, { category: e.target.value })
                       }
                     >
-                      {CATEGORIES.map((c) => (
+                      {/* 現在のカテゴリ一覧に無い値（旧データ等）でも選択状態を保てるよう先頭に補う */}
+                      {(categories.includes(item.category)
+                        ? categories
+                        : [item.category, ...categories]
+                      ).map((c) => (
                         <option key={c} value={c}>
                           {c}
                         </option>
@@ -168,7 +173,7 @@ export default function ReceiptCard({ receipt, onUpdate, onDelete }: Props) {
                     <span className="min-w-0 flex-1 truncate">{item.name}</span>
                     <span
                       className="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium text-white"
-                      style={{ backgroundColor: CATEGORY_COLORS[item.category] }}
+                      style={{ backgroundColor: categoryColor(item.category) }}
                     >
                       {item.category}
                     </span>

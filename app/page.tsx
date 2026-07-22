@@ -4,8 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import UploadDropzone from "@/components/UploadDropzone";
 import ReceiptCard from "@/components/ReceiptCard";
 import SummaryCharts from "@/components/SummaryCharts";
-import type { Receipt, StoredReceipt } from "@/lib/schema";
-import { loadReceipts, newId, saveReceipts } from "@/lib/storage";
+import CategoryManager from "@/components/CategoryManager";
+import { DEFAULT_CATEGORIES, FALLBACK_CATEGORY, type Receipt, type StoredReceipt } from "@/lib/schema";
+import {
+  loadReceipts,
+  loadCategories,
+  newId,
+  saveCategories,
+  saveReceipts,
+} from "@/lib/storage";
 import { formatMonthLabel, yen } from "@/lib/format";
 import { receiptsToCsv } from "@/lib/csv";
 import { findDuplicate } from "@/lib/duplicate";
@@ -70,6 +77,8 @@ export default function Home() {
   const [pendingDuplicates, setPendingDuplicates] = useState<PendingDuplicate[]>([]);
   // 月次フィルタ。"all" は全期間。値は購入日から作った "YYYY-MM"。
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
+  // ユーザー編集可能なカテゴリ一覧（初期値は既定。マウント後に localStorage から復元）。
+  const [categories, setCategories] = useState<string[]>([...DEFAULT_CATEGORIES]);
 
   // レシートの購入日から、選択できる月の一覧（新しい順）を作る。
   const months = useMemo(() => {
@@ -96,11 +105,23 @@ export default function Home() {
     [receipts, effectiveMonth],
   );
 
+  // カテゴリごとの使用品目数（カテゴリ管理での「使用中」表示・削除確認に使う）。
+  const categoryUsage = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of receipts) {
+      for (const it of r.items) {
+        counts[it.category] = (counts[it.category] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }, [receipts]);
+
   // 初回マウント時に localStorage から復元する。
   // localStorage はクライアント専用のため、SSR 後にこの1回だけ読み込む意図的なパターン。
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setReceipts(loadReceipts());
+    setCategories(loadCategories());
   }, []);
 
   function persist(next: StoredReceipt[]) {
@@ -113,13 +134,22 @@ export default function Home() {
     }
   }
 
+  function persistCategories(next: string[]) {
+    setCategories(next);
+    try {
+      saveCategories(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "カテゴリの保存に失敗しました。");
+    }
+  }
+
   /** 1枚を抽出して StoredReceipt を返す（失敗は投げる）。 */
   async function extractOne(file: File): Promise<StoredReceipt> {
     const { base64, mediaType } = await fileToPayload(file);
     const res = await fetch("/api/extract", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ imageBase64: base64, mediaType }),
+      body: JSON.stringify({ imageBase64: base64, mediaType, categories }),
     });
     const data: { ok: boolean; receipt?: Receipt; error?: string } = await res.json();
     if (!data.ok || !data.receipt) {
@@ -190,6 +220,32 @@ export default function Home() {
   /** 重複候補を保存せずに一覧から取り下げる。 */
   function handleDismissDuplicate(id: string) {
     setPendingDuplicates((prev) => prev.filter((p) => p.stored.id !== id));
+  }
+
+  /** カテゴリを1つ追加する（空・重複・過長は無視。バリデーションは呼び出し側でも実施）。 */
+  function handleAddCategory(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length > 12 || categories.includes(trimmed)) return;
+    persistCategories([...categories, trimmed]);
+  }
+
+  /**
+   * カテゴリを削除する。フォールバック（その他）は削除不可。
+   * 使用中の品目は「その他」に付け替えてから一覧から除く（合計は品目価格を変えないので不変）。
+   */
+  function handleDeleteCategory(name: string) {
+    if (name === FALLBACK_CATEGORY || !categories.includes(name)) return;
+    const remapped = receipts.map((r) => {
+      if (!r.items.some((it) => it.category === name)) return r;
+      return {
+        ...r,
+        items: r.items.map((it) =>
+          it.category === name ? { ...it, category: FALLBACK_CATEGORY } : it,
+        ),
+      };
+    });
+    persist(remapped);
+    persistCategories(categories.filter((c) => c !== name));
   }
 
   /** 表示中（月フィルタ適用後）のレシートを CSV でダウンロードする。 */
@@ -317,6 +373,7 @@ export default function Home() {
               <ReceiptCard
                 key={r.id}
                 receipt={r}
+                categories={categories}
                 onUpdate={handleUpdate}
                 onDelete={handleDelete}
               />
@@ -324,6 +381,13 @@ export default function Home() {
           </div>
         )}
       </section>
+
+      <CategoryManager
+        categories={categories}
+        usage={categoryUsage}
+        onAdd={handleAddCategory}
+        onDelete={handleDeleteCategory}
+      />
     </main>
   );
 }

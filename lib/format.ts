@@ -1,7 +1,15 @@
-import { CATEGORIES, type Category, type ReceiptItem } from "./schema";
+import {
+  DEFAULT_CATEGORIES,
+  FALLBACK_CATEGORY,
+  type Category,
+  type ReceiptItem,
+} from "./schema";
 
-/** カテゴリごとの色。グラフとカードのバッジで共通利用する。 */
-export const CATEGORY_COLORS: Record<Category, string> = {
+/** 既定カテゴリの色。グラフとカードのバッジで共通利用する。 */
+export const DEFAULT_CATEGORY_COLORS: Record<
+  (typeof DEFAULT_CATEGORIES)[number],
+  string
+> = {
   食費: "#ef4444",
   日用品: "#f59e0b",
   外食: "#10b981",
@@ -9,6 +17,38 @@ export const CATEGORY_COLORS: Record<Category, string> = {
   娯楽: "#8b5cf6",
   その他: "#6b7280",
 };
+
+/**
+ * ユーザー追加カテゴリ用の予備パレット。既定6色と重複しない色を並べる。
+ * 名前から決定的に選ぶので、同じカテゴリ名は常に同じ色になる。
+ */
+const CUSTOM_PALETTE = [
+  "#ec4899", // pink
+  "#14b8a6", // teal
+  "#f97316", // orange
+  "#6366f1", // indigo
+  "#84cc16", // lime
+  "#06b6d4", // cyan
+  "#a855f7", // purple
+  "#eab308", // yellow
+  "#0ea5e9", // sky
+  "#f43f5e", // rose
+];
+
+/**
+ * カテゴリ名から表示色を返す。既定カテゴリは固定色、それ以外は名前のハッシュで
+ * CUSTOM_PALETTE から決定的に割り当てる（実行時に増えたカテゴリにも必ず色が付く）。
+ */
+export function categoryColor(name: string): string {
+  if (name in DEFAULT_CATEGORY_COLORS) {
+    return DEFAULT_CATEGORY_COLORS[name as (typeof DEFAULT_CATEGORIES)[number]];
+  }
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash + name.charCodeAt(i)) % CUSTOM_PALETTE.length;
+  }
+  return CUSTOM_PALETTE[hash];
+}
 
 /** 数値を「¥1,234」形式に整形する。 */
 export function yen(value: number): string {
@@ -38,17 +78,17 @@ export function sumItemPrices(items: ReceiptItem[]): number {
 /**
  * 品目群から、支出額が最も大きいカテゴリを求める。
  * レシート見出しのバッジ表示に使う派生値（品目カテゴリが単一の情報源）。
- * 品目が無ければ「その他」。
+ * 実行時に増減するカテゴリに対応するため、固定一覧ではなく品目に現れたカテゴリだけで集計する。
+ * 品目が無ければフォールバックカテゴリ。
  */
 export function dominantCategory(items: ReceiptItem[]): Category {
   const sums = new Map<Category, number>();
   for (const it of items) {
     sums.set(it.category, (sums.get(it.category) ?? 0) + it.price);
   }
-  let best: Category = "その他";
+  let best: Category = FALLBACK_CATEGORY;
   let bestSum = 0;
-  for (const c of CATEGORIES) {
-    const s = sums.get(c) ?? 0;
+  for (const [c, s] of sums) {
     if (s > bestSum) {
       bestSum = s;
       best = c;
