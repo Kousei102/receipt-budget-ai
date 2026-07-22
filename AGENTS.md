@@ -4,7 +4,7 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
-# レシート家計簿AI
+# Nokori
 
 レシート画像・決済アプリのスクショ・クレカ明細のスクショを Claude Vision で読み取り、店名・日付・品目・金額・カテゴリを構造化データとして抽出し、支出をカテゴリ別に集計・可視化する家計簿アプリ。手入力・定期支出（家賃・サブスクの自動計上）・収入の記録（給与等の定期収入含む）と「あと使える額」表示にも対応。ポートフォリオ作品。
 

@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "レシート家計簿AI",
-  description: "レシート画像を Claude が読み取り、支出を自動でカテゴリ集計する家計簿アプリ",
+  title: "Nokori",
+  description: "収入・支出・定期費用を記録して「あと使える額」がわかる家計管理アプリ",
 };
 
 export default function RootLayout({

@@ -626,9 +626,9 @@ export default function Home() {
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold">レシート家計簿AI 🧾</h1>
+        <h1 className="text-2xl font-bold">Nokori</h1>
         <p className="mt-1 text-sm text-gray-500">
-          レシート画像を Claude が読み取り、支出を自動でカテゴリ集計します。
+          収入・支出・定期費用を記録して、あと使える額がわかる家計管理アプリ。
         </p>
       </header>
 
