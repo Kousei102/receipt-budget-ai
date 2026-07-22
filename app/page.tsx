@@ -5,14 +5,18 @@ import UploadDropzone from "@/components/UploadDropzone";
 import ReceiptCard from "@/components/ReceiptCard";
 import SummaryCharts from "@/components/SummaryCharts";
 import CategoryManager from "@/components/CategoryManager";
+import RecurringManager from "@/components/RecurringManager";
 import { DEFAULT_CATEGORIES, FALLBACK_CATEGORY, type Receipt, type StoredReceipt } from "@/lib/schema";
 import {
   loadReceipts,
   loadCategories,
+  loadRecurring,
   newId,
   saveCategories,
   saveReceipts,
+  saveRecurring,
 } from "@/lib/storage";
+import { materializeRecurring, type RecurringExpense } from "@/lib/recurring";
 import { formatMonthLabel, isEmptyReceipt, yen } from "@/lib/format";
 import { receiptsToCsv } from "@/lib/csv";
 import { findDuplicate } from "@/lib/duplicate";
@@ -91,6 +95,8 @@ export default function Home() {
   const [categories, setCategories] = useState<string[]>([...DEFAULT_CATEGORIES]);
   // 「＋手入力」で追加した直後のカードの id。このカードだけ編集モードで開く。
   const [newManualId, setNewManualId] = useState<string | null>(null);
+  // 定期支出の定義一覧（家賃・サブスク等）。ロード時に未計上の月ぶんを自動計上する。
+  const [recurring, setRecurring] = useState<RecurringExpense[]>([]);
 
   // レシートの購入日から、選択できる月の一覧（新しい順）を作る。
   const months = useMemo(() => {
@@ -128,12 +134,32 @@ export default function Home() {
     return counts;
   }, [receipts]);
 
-  // 初回マウント時に localStorage から復元する。
+  // 初回マウント時に localStorage から復元し、定期支出の未計上分を自動計上する。
   // localStorage はクライアント専用のため、SSR 後にこの1回だけ読み込む意図的なパターン。
   useEffect(() => {
+    const loaded = loadReceipts();
+    const { defs, created } = materializeRecurring(
+      loadRecurring(),
+      loaded,
+      todayLocal().slice(0, 7),
+    );
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setReceipts(loadReceipts());
     setCategories(loadCategories());
+    setRecurring(defs);
+    if (created.length > 0) {
+      const next = [...created, ...loaded];
+      setReceipts(next);
+      try {
+        // レコードの保存に成功してからカーソル（lastPostedMonth）を保存する。
+        // 逆順だと保存失敗時にカーソルだけ進み、その月の計上が永久に欠落する。
+        saveReceipts(next);
+        saveRecurring(defs);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "データの保存に失敗しました。");
+      }
+    } else {
+      setReceipts(loaded);
+    }
   }, []);
 
   function persist(next: StoredReceipt[]) {
@@ -152,6 +178,15 @@ export default function Home() {
       saveCategories(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : "カテゴリの保存に失敗しました。");
+    }
+  }
+
+  function persistRecurring(next: RecurringExpense[]) {
+    setRecurring(next);
+    try {
+      saveRecurring(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "定期支出の保存に失敗しました。");
     }
   }
 
@@ -310,6 +345,46 @@ export default function Home() {
     });
     persist(remapped);
     persistCategories(categories.filter((c) => c !== name));
+    // 定期支出の定義も付け替える（放置すると削除済みカテゴリで計上され続ける）。
+    if (recurring.some((d) => d.category === name)) {
+      persistRecurring(
+        recurring.map((d) =>
+          d.category === name ? { ...d, category: FALLBACK_CATEGORY } : d,
+        ),
+      );
+    }
+  }
+
+  /** 定期支出の定義を追加し、開始月から当月までの未計上分をその場で計上する。 */
+  function handleAddRecurring(
+    input: Omit<RecurringExpense, "id" | "createdAt" | "lastPostedMonth">,
+  ) {
+    const def: RecurringExpense = {
+      ...input,
+      id: newId(),
+      createdAt: new Date().toISOString(),
+    };
+    const { defs, created } = materializeRecurring(
+      [def],
+      receipts,
+      todayLocal().slice(0, 7),
+    );
+    const nextDefs = [...recurring, ...defs];
+    const nextReceipts = [...created, ...receipts];
+    setReceipts(nextReceipts);
+    setRecurring(nextDefs);
+    try {
+      // マウント時と同じく、レコードの保存に成功してからカーソルを保存する。
+      saveReceipts(nextReceipts);
+      saveRecurring(nextDefs);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "データの保存に失敗しました。");
+    }
+  }
+
+  /** 定期支出の定義を削除する。計上済みのレコードは残し、今後の自動計上だけ止める。 */
+  function handleDeleteRecurring(id: string) {
+    persistRecurring(recurring.filter((d) => d.id !== id));
   }
 
   /** 表示中（月フィルタ適用後）のレシートを CSV でダウンロードする。 */
@@ -459,6 +534,13 @@ export default function Home() {
           </div>
         )}
       </section>
+
+      <RecurringManager
+        defs={recurring}
+        categories={categories}
+        onAdd={handleAddRecurring}
+        onDelete={handleDeleteRecurring}
+      />
 
       <CategoryManager
         categories={categories}

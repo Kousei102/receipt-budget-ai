@@ -1,4 +1,5 @@
 import { DEFAULT_CATEGORIES, FALLBACK_CATEGORY, type Category, type StoredReceipt } from "./schema";
+import type { RecurringExpense } from "./recurring";
 
 /**
  * v1 のデータ保存はブラウザの localStorage を使う（DB・ログイン不要で完結）。
@@ -6,6 +7,7 @@ import { DEFAULT_CATEGORIES, FALLBACK_CATEGORY, type Category, type StoredReceip
  */
 const KEY = "receipt-kakeibo:receipts";
 const CAT_KEY = "receipt-kakeibo:categories";
+const REC_KEY = "receipt-kakeibo:recurring";
 
 /** 旧形式（品目カテゴリや source が無かった頃）の型。 */
 type LegacyReceipt = Omit<StoredReceipt, "items" | "source"> & {
@@ -91,6 +93,30 @@ export function saveCategories(list: string[]): void {
   } catch {
     throw new Error(
       "カテゴリの保存に失敗しました。ブラウザの空き容量やプライバシー設定をご確認ください。",
+    );
+  }
+}
+
+/** 定期支出の定義一覧を読み込む。未保存・壊れているときは空配列。 */
+export function loadRecurring(): RecurringExpense[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(REC_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? (parsed as RecurringExpense[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** 定期支出の定義一覧を保存する。失敗は握り潰さず投げ、呼び出し側でユーザーに知らせる。 */
+export function saveRecurring(list: RecurringExpense[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(REC_KEY, JSON.stringify(list));
+  } catch {
+    throw new Error(
+      "定期支出の保存に失敗しました。ブラウザの空き容量やプライバシー設定をご確認ください。",
     );
   }
 }
