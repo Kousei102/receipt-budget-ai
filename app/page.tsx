@@ -109,7 +109,10 @@ export default function Home() {
   // 既存レシートと重複と判定され、保存を見送った候補（ユーザーが「追加する」/「✕」で解決するまで残る）。
   const [pendingDuplicates, setPendingDuplicates] = useState<PendingDuplicate[]>([]);
   // 月次フィルタ。"all" は全期間。値は購入日から作った "YYYY-MM"。
-  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+  // 初期値は当月（当月にデータが無ければ下の effectiveMonth が全期間にフォールバックする）。
+  const [selectedMonth, setSelectedMonth] = useState<string>(() =>
+    todayLocal().slice(0, 7),
+  );
   // ユーザー編集可能なカテゴリ一覧（初期値は既定。マウント後に localStorage から復元）。
   const [categories, setCategories] = useState<string[]>([...DEFAULT_CATEGORIES]);
   // 「＋手入力」で追加した直後のカードの id。このカードだけ編集モードで開く。
