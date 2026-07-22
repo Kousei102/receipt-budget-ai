@@ -35,7 +35,7 @@ Next.js 16 (App Router) / React 19 / TypeScript / Tailwind CSS v4 / Recharts / Z
 
 ## 設計上の約束・注意点
 - APIキーは **BYOK優先＋envフォールバック**：ユーザーが「🔑 APIキー設定」（`components/ApiKeySettings.tsx`）で登録したキーを localStorage（`receipt-kakeibo:api-key`）に保存し、抽出時にヘッダー `x-anthropic-api-key` で毎回中継する。無ければサーバーの `ANTHROPIC_API_KEY` にフォールバック。**サーバーはユーザーのキーを保存・ログ出力しない**（`app/api/extract/route.ts` で受けて `extractReceipts` に渡すだけ）。キー皆無は早期401、キー無効（SDK の `AuthenticationError`/`PermissionDeniedError`）も401で日本語メッセージを返す。
-- `ANTHROPIC_API_KEY` は `.env.local`（Git管理外）に置く。**eval の実行には必須**。UI はユーザーキーがあれば env 不要（本番で env を外せば実質BYOK専用にできる）。
+- `ANTHROPIC_API_KEY` は `.env.local`（Git管理外）に置く。**eval の実行には必須**。UI はユーザーキーがあれば env 不要。**本番（Vercel）は env 未設定のBYOK専用運用**（訪問者は「🔑 APIキー設定」で自分のキーを登録する必要があり、未設定時は401エラーになる）。
 - APIキー設定UI（`components/ApiKeySettings.tsx`）の実装メモ：他の設定セクション（⚙🔁💰）と同じ折りたたみ `<details>` 形式で、`<CategoryManager>` の後に置く。prop→ローカルstate の同期は effect ではなく**レンダー中の前回値比較**（IncomeManager の貯蓄目標と同じパターン。localStorage 復元がマウント後に来るため）。入力は**印字可能ASCIIのみ許可** — HTTPヘッダーに非ASCIIを載せると fetch が例外を投げるため、保存時に弾く。`sk-ant-` で始まらないキーは琥珀色の警告のみで**拒否はしない**（キー形式の将来変更に備える）。クリアは `saveApiKey("")` → localStorage の**エントリごと削除**（空文字を保存しない）。クライアントはキーがあるときだけヘッダーを付ける（空文字ヘッダーを送らない）。キーは**ボディに含めない**（ボディをダンプするログへの混入防止）。
 - レスポンスは必ず `receiptSchema.safeParse` を通してから使う（壊れたJSONを弾く）。
 - カテゴリは**実行時にユーザーが追加・削除できる**（実体は localStorage、`lib/storage.ts` の `loadCategories`/`saveCategories`）。`lib/schema.ts` の `DEFAULT_CATEGORIES` は初期シード兼フォールバックにすぎない。抽出時は現在の一覧を `/api/extract` に渡し、`buildReceiptJsonSchema` が Claude の tool `enum` を動的生成する。色は `lib/format.ts` の `categoryColor()` が任意名に自動割り当てするので、色マップの手更新は不要（既定6色だけ `DEFAULT_CATEGORY_COLORS` に固定）。`FALLBACK_CATEGORY`（その他）は削除不可の恒久カテゴリ。
