@@ -30,7 +30,7 @@ Next.js 16 (App Router) / React 19 / TypeScript / Tailwind CSS v4 / Recharts / Z
 - `lib/income.ts` — 収入レコード（`IncomeRecord`）と定期収入の定義型・自動計上（`materializeRecurringIncome`、冪等）
 - `lib/balance.ts` — 収支サマリーの集計（`calcBalance`。あと使える額 = 収入 − 貯蓄目標 − 支出）
 - `lib/format.ts` — 金額整形・カテゴリ色（`categoryColor`）・要確認しきい値・入力経路ラベル（`SOURCE_LABELS`）
-- `components/` — UploadDropzone / ReceiptCard / SummaryCharts / CategoryManager / RecurringManager / IncomeManager
+- `components/` — UploadDropzone / ReceiptCard / SummaryCharts / CategoryManager / RecurringManager / IncomeManager / HelpModal（使い方説明）
 - `eval/run-eval.ts` — 精度評価スクリプト
 
 ## 設計上の約束・注意点
@@ -45,3 +45,4 @@ Next.js 16 (App Router) / React 19 / TypeScript / Tailwind CSS v4 / Recharts / Z
 - 収入（`IncomeRecord`）は**支出（`StoredReceipt`）と混ぜない**：集計・CSV・重複検知はすべて支出前提のため、別の型・別の localStorage キーで管理する（`lib/income.ts` / `lib/storage.ts` の `loadIncomes` 等）。入力経路は手入力と定期のみ（画像からのAI抽出は対象外）。CSV は引き続き**支出専用**（v1）。
 - 定期収入（給与等）の冪等セマンティクスは**定期支出と同一**：`lastPostedMonth` カーソルが主ガード、レコード保存成功→カーソル保存の順序、定義の編集は今後の計上分のみ。当月分は給料日未到来でも計上する（定期支出と対称。「あと使える額」が月初から安定する）。月列挙ロジックは `lib/recurring.ts` の `enumerateMonthsToPost` を両者で共有する。
 - 「あと使える額」= 今月の収入 − 貯蓄目標 − 今月の支出（`lib/balance.ts` の `calcBalance`）。支出は `items[].price` の合計を使い、円グラフの集計と必ず一致させる（`total` は使わない）。当月の定期支出はロード時に自動計上済みなので固定費の先取りは追加計算不要。「あと使える」という表現は**当月のみ**（過去月は「収支」、全期間は合計のみ）。貯蓄目標はグローバルな月額1つ（月別設定はしない）。収入も貯蓄目標も未設定なら収支サマリーは表示しない。
+- 使い方説明（`components/HelpModal.tsx`）はヘッダー右の「？ 使い方」ボタンから開く**ネイティブ `<dialog>` モーダル**（`showModal()`。Esc・✕・背景クリックで閉じる。ライブラリ不使用）。**支出・収入とも0件（自動計上分含む）のロード完了時に一度だけ自動表示**する — 判定は localStorage の「表示済み」フラグではなくデータ0件チェック（`app/page.tsx` の `helpAutoOpen`。マウント時 useEffect で一度だけ確定させ、以後 prop を揺らさない）。説明文中のボタン名・絵文字（⚙🔁💰⬇⚠ 等）は実UIの表記と一致させること — UI文言を変えたら HelpModal 側も追従する。
