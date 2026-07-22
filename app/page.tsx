@@ -382,6 +382,37 @@ export default function Home() {
     }
   }
 
+  /**
+   * 定期支出の定義を変更する。今後の自動計上分にのみ反映され、計上済みレコードは触らない。
+   * 変更後の定義で即 materialize し直す（未来開始だった定義を当月に前倒しした場合などに
+   * その場で計上される。lastPostedMonth が主ガードなので二重計上はしない）。
+   */
+  function handleUpdateRecurring(
+    id: string,
+    patch: Omit<RecurringExpense, "id" | "createdAt" | "lastPostedMonth">,
+  ) {
+    const updated = recurring.map((d) => (d.id === id ? { ...d, ...patch } : d));
+    const { defs, created } = materializeRecurring(
+      updated,
+      receipts,
+      todayLocal().slice(0, 7),
+    );
+    if (created.length === 0) {
+      persistRecurring(defs);
+      return;
+    }
+    const nextReceipts = [...created, ...receipts];
+    setReceipts(nextReceipts);
+    setRecurring(defs);
+    try {
+      // マウント時・追加時と同じく、レコードの保存に成功してからカーソルを保存する。
+      saveReceipts(nextReceipts);
+      saveRecurring(defs);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "データの保存に失敗しました。");
+    }
+  }
+
   /** 定期支出の定義を削除する。計上済みのレコードは残し、今後の自動計上だけ止める。 */
   function handleDeleteRecurring(id: string) {
     persistRecurring(recurring.filter((d) => d.id !== id));
@@ -539,6 +570,7 @@ export default function Home() {
         defs={recurring}
         categories={categories}
         onAdd={handleAddRecurring}
+        onUpdate={handleUpdateRecurring}
         onDelete={handleDeleteRecurring}
       />
 

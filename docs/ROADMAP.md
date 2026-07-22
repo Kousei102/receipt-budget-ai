@@ -61,7 +61,7 @@
 
 - [x] **D-5. 定期支出の自動計上（レシート以外の支出形態・その3）**
   - なぜ: 家賃・サブスク等の毎月の固定費は画像も手入力もなじまず、記録漏れの温床だった。
-  - 何を: `lib/recurring.ts` に定義型 `RecurringExpense` と純関数 `materializeRecurring` を追加。アプリ起動時（と定義追加時）に未計上の月ぶんを `source: "recurring"` のレコードとして自動生成する。冪等性は定義側の `lastPostedMonth` カーソルを主・レコードの `recurringId`+`recurringMonth` 存在チェックを従の二段構え（計上済みレコードを削除しても復活しない）。管理UIは `components/RecurringManager.tsx`（追加・削除のみ、削除しても計上済みレコードは残す）。カテゴリ削除時は定義側も「その他」へ付け替え。支払日が月の日数を超える場合は月末に丸める。
+  - 何を: `lib/recurring.ts` に定義型 `RecurringExpense` と純関数 `materializeRecurring` を追加。アプリ起動時（と定義追加時）に未計上の月ぶんを `source: "recurring"` のレコードとして自動生成する。冪等性は定義側の `lastPostedMonth` カーソルを主・レコードの `recurringId`+`recurringMonth` 存在チェックを従の二段構え（計上済みレコードを削除しても復活しない）。管理UIは `components/RecurringManager.tsx`（追加・編集・削除。編集は今後の計上分にのみ反映し計上済みレコードは触らない。削除しても計上済みレコードは残す）。カテゴリ削除時は定義側も「その他」へ付け替え。支払日が月の日数を超える場合は月末に丸める。
 
 - [x] **D-4. 決済アプリのスクショ対応（レシート以外の支出形態・その2）**
   - なぜ: PayPay 等のキャッシュレス支払いはレシートが残らないことが多く、履歴画面のスクショから計上できると実用性が大きく上がる。

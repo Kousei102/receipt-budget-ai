@@ -11,6 +11,11 @@ type Props = {
   onAdd: (
     def: Omit<RecurringExpense, "id" | "createdAt" | "lastPostedMonth">,
   ) => void;
+  /** 定義の内容変更。今後の自動計上分にのみ反映される（計上済みレコードは触らない）。 */
+  onUpdate: (
+    id: string,
+    patch: Omit<RecurringExpense, "id" | "createdAt" | "lastPostedMonth">,
+  ) => void;
   onDelete: (id: string) => void;
 };
 
@@ -21,13 +26,15 @@ function currentMonth(): string {
 }
 
 /**
- * 定期支出（家賃・サブスク等）の追加・削除 UI。設定的な位置づけなので折りたたみで表示する。
- * v1 は追加・削除のみ（内容の変更は削除→再作成で代替）。
+ * 定期支出（家賃・サブスク等）の追加・編集・削除 UI。設定的な位置づけなので折りたたみで表示する。
+ * 編集は追加フォームを使い回す（「編集」で値をロードし、「更新」で確定）。
+ * 変更は今後の自動計上分にのみ反映され、計上済みレコードは変わらない。
  */
 export default function RecurringManager({
   defs,
   categories,
   onAdd,
+  onUpdate,
   onDelete,
 }: Props) {
   const [name, setName] = useState("");
@@ -36,6 +43,8 @@ export default function RecurringManager({
   const [dayOfMonth, setDayOfMonth] = useState("1");
   const [startMonth, setStartMonth] = useState(currentMonth());
   const [endMonth, setEndMonth] = useState("");
+  // 編集中の定義の id。null なら追加モード。
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const trimmedName = name.trim();
   const amountNum = Number(amount);
@@ -50,18 +59,47 @@ export default function RecurringManager({
     /^\d{4}-\d{2}$/.test(startMonth) &&
     validPeriod;
 
-  function handleAdd() {
+  /** フォームを初期状態（追加モード）に戻す。 */
+  function resetForm() {
+    setEditingId(null);
+    setName("");
+    setAmount("");
+    setCategory(FALLBACK_CATEGORY);
+    setDayOfMonth("1");
+    setStartMonth(currentMonth());
+    setEndMonth("");
+  }
+
+  /** 定義の値をフォームにロードして編集モードに入る。 */
+  function startEdit(def: RecurringExpense) {
+    setEditingId(def.id);
+    setName(def.name);
+    setAmount(String(def.amount));
+    setCategory(def.category);
+    setDayOfMonth(String(def.dayOfMonth));
+    setStartMonth(def.startMonth);
+    setEndMonth(def.endMonth ?? "");
+  }
+
+  function handleSubmit() {
     if (!canAdd) return;
-    onAdd({
+    const input = {
       name: trimmedName,
       amount: amountNum,
       category: categories.includes(category) ? category : FALLBACK_CATEGORY,
       dayOfMonth: dayNum,
       startMonth,
       endMonth: endMonth || undefined,
-    });
-    setName("");
-    setAmount("");
+    };
+    if (editingId) {
+      onUpdate(editingId, input);
+      resetForm();
+    } else {
+      onAdd(input);
+      // 続けて追加しやすいよう、カテゴリ・支払日・期間は残して名前と金額だけ空にする。
+      setName("");
+      setAmount("");
+    }
   }
 
   function handleDelete(def: RecurringExpense) {
@@ -72,6 +110,8 @@ export default function RecurringManager({
     ) {
       return;
     }
+    // 編集中の定義が消えたらフォームも追加モードに戻す。
+    if (def.id === editingId) resetForm();
     onDelete(def.id);
   }
 
@@ -88,7 +128,13 @@ export default function RecurringManager({
       ) : (
         <ul className="mt-3 space-y-1.5">
           {defs.map((def) => (
-            <li key={def.id} className="flex items-center gap-2">
+            <li
+              key={def.id}
+              className={
+                "flex items-center gap-2 rounded px-1" +
+                (editingId === def.id ? " bg-blue-50 dark:bg-blue-950/40" : "")
+              }
+            >
               <span
                 className="inline-block h-3 w-3 shrink-0 rounded-full"
                 style={{ backgroundColor: categoryColor(def.category) }}
@@ -102,6 +148,13 @@ export default function RecurringManager({
                 毎月{def.dayOfMonth}日 / {formatMonthLabel(def.startMonth)}〜
                 {def.endMonth ? formatMonthLabel(def.endMonth) : ""}
               </span>
+              <button
+                onClick={() => startEdit(def)}
+                aria-label={`定期支出「${def.name}」を編集`}
+                className="shrink-0 px-1 text-blue-600 hover:underline dark:text-blue-400"
+              >
+                {editingId === def.id ? "編集中" : "編集"}
+              </button>
               <button
                 onClick={() => handleDelete(def)}
                 aria-label={`定期支出「${def.name}」を削除`}
@@ -179,15 +232,27 @@ export default function RecurringManager({
       )}
       <div className="mt-2 flex items-center justify-between gap-2">
         <p className="text-xs text-gray-400">
-          追加すると開始月から当月までを自動計上します。終了月は空欄で無期限。
+          {editingId
+            ? "変更は今後の自動計上分から反映されます。計上済みのレコードは変わりません。"
+            : "追加すると開始月から当月までを自動計上します。終了月は空欄で無期限。"}
         </p>
-        <button
-          onClick={handleAdd}
-          disabled={!canAdd}
-          className="shrink-0 rounded border border-gray-300 px-3 py-1 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800"
-        >
-          追加
-        </button>
+        <div className="flex shrink-0 gap-2">
+          {editingId && (
+            <button
+              onClick={resetForm}
+              className="rounded border border-gray-300 px-3 py-1 text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+            >
+              キャンセル
+            </button>
+          )}
+          <button
+            onClick={handleSubmit}
+            disabled={!canAdd}
+            className="rounded border border-gray-300 px-3 py-1 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800"
+          >
+            {editingId ? "更新" : "追加"}
+          </button>
+        </div>
       </div>
     </details>
   );
