@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  extractReceipt,
+  extractReceipts,
   SUPPORTED_MEDIA_TYPES,
   type SupportedMediaType,
 } from "@/lib/anthropic";
@@ -53,7 +53,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await extractReceipt(
+    // 1画像から複数レコードが返り得る（決済アプリの履歴画面）。レスポンスは { ok, receipts }。
+    const result = await extractReceipts(
       imageBase64,
       mediaType as SupportedMediaType,
       categories,

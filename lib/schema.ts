@@ -78,7 +78,8 @@ export function buildReceiptJsonSchema(categories: readonly string[]) {
     properties: {
       store: {
         type: "string",
-        description: "店名。読み取れなければ空文字にする。",
+        description:
+          "店名または支払先（決済アプリの履歴では加盟店名）。読み取れなければ空文字にする。",
       },
       date: {
         type: "string",
@@ -113,9 +114,30 @@ export function buildReceiptJsonSchema(categories: readonly string[]) {
         minimum: 0,
         maximum: 1,
         description:
-          "抽出全体への自信度 0〜1。ぼやけ・見切れ・レシート以外の画像など不確かなほど低くする。",
+          "このレコード単体への自信度 0〜1。ぼやけ・見切れ・支出の記録として解釈できない画像など不確かなほど低くする。",
       },
     },
     required: ["store", "date", "items", "total", "confidence"],
+  } as const;
+}
+
+/**
+ * Tool Use に渡す最上位の JSON Schema。1画像から複数の支出レコードを受け取れるよう
+ * buildReceiptJsonSchema（1件分）を配列でラップする。
+ * 紙のレシートは1件、決済アプリの履歴画面は取引ごとに1件ずつ返させる。
+ */
+export function buildExtractionJsonSchema(categories: readonly string[]) {
+  return {
+    type: "object",
+    properties: {
+      receipts: {
+        type: "array",
+        minItems: 1,
+        description:
+          "画像から抽出した支出レコードの一覧。紙のレシートなら必ず1件だけ。決済アプリの取引履歴画面なら、見えている取引1件につき1レコードにする。",
+        items: buildReceiptJsonSchema(categories),
+      },
+    },
+    required: ["receipts"],
   } as const;
 }

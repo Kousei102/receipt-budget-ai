@@ -155,24 +155,28 @@ export default function Home() {
     }
   }
 
-  /** 1枚を抽出して StoredReceipt を返す（失敗は投げる）。 */
-  async function extractOne(file: File): Promise<StoredReceipt> {
+  /**
+   * 1枚の画像を抽出して StoredReceipt の配列を返す（失敗は投げる）。
+   * 紙のレシートは1件、決済アプリの履歴画面は取引ごとに複数件返る。
+   */
+  async function extractFromFile(file: File): Promise<StoredReceipt[]> {
     const { base64, mediaType } = await fileToPayload(file);
     const res = await fetch("/api/extract", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ imageBase64: base64, mediaType, categories }),
     });
-    const data: { ok: boolean; receipt?: Receipt; error?: string } = await res.json();
-    if (!data.ok || !data.receipt) {
-      throw new Error(data.error ?? "レシートを読み取れませんでした。");
+    const data: { ok: boolean; receipts?: Receipt[]; error?: string } = await res.json();
+    if (!data.ok || !data.receipts || data.receipts.length === 0) {
+      throw new Error(data.error ?? "画像から支出を読み取れませんでした。");
     }
-    return {
-      ...data.receipt,
+    const createdAt = new Date().toISOString();
+    return data.receipts.map((r) => ({
+      ...r,
       id: newId(),
-      createdAt: new Date().toISOString(),
+      createdAt,
       source: "receipt",
-    };
+    }));
   }
 
   /** 空の手入力カードを先頭に追加し、編集モードで開く。 */
@@ -222,15 +226,28 @@ export default function Home() {
 
     for (let i = 0; i < files.length; i++) {
       try {
-        const stored = await extractOne(files[i]);
-        // base（既存）と added（同バッチ内で先に追加した分）の両方と照合する。
-        // added も見ないと、同じ画像を1回のバッチで複数選択したときの重複を見逃す。
-        const dupe = findDuplicate(stored, base) ?? findDuplicate(stored, added);
-        if (dupe) {
-          newPendingDuplicates.push({ fileName: files[i].name, stored });
-        } else {
-          added.unshift(stored); // 新しく読んだものを先頭に
-          persist([...added, ...base]); // 逐次反映（終わったものから表示）
+        const extracted = await extractFromFile(files[i]);
+        // base（既存）と added（先に処理した画像・バッチの分）の両方と照合する。
+        // ただし同一画像内のレコード同士は照合しない：決済アプリの履歴は品目が無く
+        // 店名・日付・合計の3点キーが衝突しやすいが、モデルが別行として返した以上
+        // 別取引と信頼する（同じ店で同日に同額を2回払うのは正当な連続取引）。
+        const accepted: StoredReceipt[] = [];
+        for (let k = 0; k < extracted.length; k++) {
+          const stored = extracted[k];
+          const dupe = findDuplicate(stored, base) ?? findDuplicate(stored, added);
+          if (dupe) {
+            const label =
+              extracted.length > 1
+                ? `${files[i].name} (${k + 1}/${extracted.length}件目)`
+                : files[i].name;
+            newPendingDuplicates.push({ fileName: label, stored });
+          } else {
+            accepted.push(stored);
+          }
+        }
+        if (accepted.length > 0) {
+          added.unshift(...accepted); // 新しく読んだものを先頭に
+          persist([...added, ...base]); // 画像単位で反映（終わったものから表示）
         }
       } catch (e) {
         errors.push(`${files[i].name}: ${e instanceof Error ? e.message : "読み取りに失敗"}`);

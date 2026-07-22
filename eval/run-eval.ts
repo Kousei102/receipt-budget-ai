@@ -11,7 +11,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join, extname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
-import { extractReceipt, type SupportedMediaType } from "../lib/anthropic";
+import { extractReceipts, type SupportedMediaType } from "../lib/anthropic";
 import type { Receipt } from "../lib/schema";
 
 // --- .env.local から API キーを読み込む（Next.js を経由せず単体実行するため） ---
@@ -41,7 +41,11 @@ const MEDIA_BY_EXT: Record<string, SupportedMediaType> = {
   ".webp": "image/webp",
 };
 
-/** 正解データ（期待値）。confidence は評価対象外なので任意。 */
+/**
+ * 正解データ（期待値）。confidence は評価対象外なので任意。
+ * `.expected.json` は単一オブジェクト（従来のレシート1枚）と配列（決済アプリの
+ * 履歴画面など複数取引）の両方を受け付ける。単一なら「1件の配列」として扱う。
+ */
 type Expected = Omit<Receipt, "confidence"> & { confidence?: number };
 
 const norm = (s: string) => s.replace(/\s/g, "").toLowerCase();
@@ -57,15 +61,19 @@ async function main() {
     return;
   }
 
-  const tally = { store: 0, date: 0, category: 0, total: 0, items: 0 };
+  // count: レコード件数の一致。他は index 対応でレコード同士を突き合わせ、
+  // ファイル単位では「一致レコード数 / max(期待件数, 抽出件数)」の割合を加算する
+  // （従来の1枚=1件サンプルでは 0 か 1 になり、集計結果は従来と同一）。
+  const tally = { count: 0, store: 0, date: 0, category: 0, total: 0, items: 0 };
   let scored = 0;
 
   for (const file of files) {
     const stem = basename(file, extname(file));
     const expectedPath = join(SAMPLES_DIR, `${stem}.expected.json`);
-    let expected: Expected;
+    let expectedList: Expected[];
     try {
-      expected = JSON.parse(readFileSync(expectedPath, "utf8"));
+      const raw = JSON.parse(readFileSync(expectedPath, "utf8"));
+      expectedList = Array.isArray(raw) ? raw : [raw];
     } catch {
       console.log(`⏭  ${file}: 期待値 ${stem}.expected.json が無いのでスキップ`);
       continue;
@@ -73,33 +81,49 @@ async function main() {
 
     const mediaType = MEDIA_BY_EXT[extname(file).toLowerCase()];
     const base64 = readFileSync(join(SAMPLES_DIR, file)).toString("base64");
-    const result = await extractReceipt(base64, mediaType);
+    const result = await extractReceipts(base64, mediaType);
 
     if (!result.ok) {
       console.log(`❌ ${file}: 抽出失敗 (${result.error})`);
       continue;
     }
-    const got = result.receipt;
+    const got = result.receipts;
     scored++;
 
-    const hit = {
-      store: norm(got.store) === norm(expected.store),
-      date: got.date === expected.date,
+    const countHit = got.length === expectedList.length;
+    if (countHit) tally.count++;
+
+    // 過不足があっても採点できる範囲（index 対応）で突き合わせ、超過・不足は分母で減点する。
+    const denom = Math.max(expectedList.length, got.length);
+    const pairs = Math.min(expectedList.length, got.length);
+    const hits = { store: 0, date: 0, category: 0, total: 0, items: 0 };
+    for (let i = 0; i < pairs; i++) {
+      const g = got[i];
+      const e = expectedList[i];
+      if (norm(g.store) === norm(e.store)) hits.store++;
+      if (g.date === e.date) hits.date++;
       // 品目カテゴリの一致：品数が一致し、各品目のカテゴリが順に一致したら○。
-      category:
-        got.items.length === expected.items.length &&
-        got.items.every((it, i) => it.category === expected.items[i].category),
-      total: Math.abs(got.total - expected.total) < 1,
-      items: got.items.length === expected.items.length,
-    };
-    for (const k of Object.keys(tally) as (keyof typeof tally)[]) {
-      if (hit[k]) tally[k]++;
+      if (
+        g.items.length === e.items.length &&
+        g.items.every((it, j) => it.category === e.items[j].category)
+      ) {
+        hits.category++;
+      }
+      if (Math.abs(g.total - e.total) < 1) hits.total++;
+      if (g.items.length === e.items.length) hits.items++;
+    }
+    for (const k of Object.keys(hits) as (keyof typeof hits)[]) {
+      tally[k] += hits[k] / denom;
     }
 
     const mark = (b: boolean) => (b ? "✓" : "✗");
+    // 1件サンプルは従来どおり ✓/✗、複数件は「一致数/件数」で表示する。
+    const fmt = (n: number) => (denom === 1 ? mark(n === 1) : `${n}/${denom}`);
+    const avgConfidence = got.reduce((s, r) => s + r.confidence, 0) / got.length;
     console.log(
-      `📄 ${file}  店${mark(hit.store)} 日${mark(hit.date)} 分類${mark(hit.category)} ` +
-        `合計${mark(hit.total)} 品数${mark(hit.items)}  (自信度 ${Math.round(got.confidence * 100)}%)`,
+      `📄 ${file}  件数${mark(countHit)} 店${fmt(hits.store)} 日${fmt(hits.date)} ` +
+        `分類${fmt(hits.category)} 合計${fmt(hits.total)} 品数${fmt(hits.items)}` +
+        `  (自信度 ${Math.round(avgConfidence * 100)}%)`,
     );
   }
 
@@ -110,6 +134,7 @@ async function main() {
 
   const pct = (n: number) => `${Math.round((n / scored) * 100)}%`;
   console.log(`\n===== 集計（${scored}枚） =====`);
+  console.log(`件数一致    : ${pct(tally.count)}`);
   console.log(`店名一致    : ${pct(tally.store)}`);
   console.log(`日付一致    : ${pct(tally.date)}`);
   console.log(`カテゴリ一致: ${pct(tally.category)}`);
