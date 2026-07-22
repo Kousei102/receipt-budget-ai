@@ -9,7 +9,7 @@ import {
 
 /** 入力経路の表示名（カードのバッジ・CSVの種別列で共通利用）。 */
 export const SOURCE_LABELS: Record<ReceiptSource, string> = {
-  receipt: "レシート",
+  receipt: "画像読取",
   manual: "手入力",
   recurring: "定期",
   card: "カード明細",

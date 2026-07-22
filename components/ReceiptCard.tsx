@@ -105,7 +105,7 @@ export default function ReceiptCard({
         <span
           className="shrink-0 rounded-full px-3 py-1 text-sm font-medium text-white"
           style={{ backgroundColor: categoryColor(headlineCategory) }}
-          title="このレシートで最も支出が多いカテゴリ（品目から自動判定）"
+          title="この記録で最も支出が多いカテゴリ（品目から自動判定）"
         >
           {headlineCategory}
         </span>

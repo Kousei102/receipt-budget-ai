@@ -8,7 +8,7 @@ type Props = {
 };
 
 /**
- * レシート画像のドラッグ&ドロップ + クリック選択（複数枚対応）。
+ * 支出画像（レシート・決済アプリ・カード明細）のドラッグ&ドロップ + クリック選択（複数枚対応）。
  * 受け取ったファイルはそのまま onFiles で親に渡す（変換や送信は親が担当）。
  */
 export default function UploadDropzone({ onFiles, disabled }: Props) {
@@ -69,7 +69,7 @@ export default function UploadDropzone({ onFiles, disabled }: Props) {
       <p className="font-medium">
         {disabled
           ? "読み取り中…"
-          : "レシート画像をドロップ、またはクリックして選択（複数可）"}
+          : "レシート・決済アプリ・カード明細の画像をドロップ、またはクリックして選択（複数可）"}
       </p>
       <p className="text-sm text-gray-500">JPEG / PNG / GIF / WebP に対応</p>
     </div>
